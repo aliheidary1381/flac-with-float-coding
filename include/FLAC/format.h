@@ -33,6 +33,10 @@
 #ifndef FLAC__FORMAT_H
 #define FLAC__FORMAT_H
 
+#ifdef HAVE_CONFIG_H
+#  include <config.h>
+#endif
+
 #include "export.h"
 #include "ordinals.h"
 
@@ -103,13 +107,25 @@ extern "C" {
 #define FLAC__SUBSET_MAX_BLOCK_SIZE_48000HZ (4608u)
 
 /** The maximum number of channels permitted by the format. */
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+#define FLAC__MAX_CHANNELS (256u)
+#else
 #define FLAC__MAX_CHANNELS (8u)
+#endif
 
 /** The minimum sample resolution permitted by the format. */
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+#define FLAC__MIN_BITS_PER_SAMPLE (1u)
+#else
 #define FLAC__MIN_BITS_PER_SAMPLE (4u)
+#endif
 
 /** The maximum sample resolution permitted by the format. */
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+#define FLAC__MAX_BITS_PER_SAMPLE (128u)
+#else
 #define FLAC__MAX_BITS_PER_SAMPLE (32u)
+#endif
 
 /** The maximum sample resolution permitted by libFLAC.
  *
@@ -519,8 +535,16 @@ typedef enum {
 	FLAC__METADATA_TYPE_PICTURE = 6,
 	/**< <A HREF="https://xiph.org/flac/format.html#metadata_block_picture">PICTURE</A> block */
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	FLAC__METADATA_TYPE_STREAMINFO_EXTENSION = 7,
+	/** Experimental. See https://github.com/xiph/flac/pull/842 */
+
+	FLAC__METADATA_TYPE_UNDEFINED = 8,
+	/**< marker to denote beginning of undefined type range; this number will increase as new metadata types are added */
+#else
 	FLAC__METADATA_TYPE_UNDEFINED = 7,
 	/**< marker to denote beginning of undefined type range; this number will increase as new metadata types are added */
+#endif
 
 	FLAC__MAX_METADATA_TYPE = FLAC__MAX_METADATA_TYPE_CODE,
 	/**< No type will ever be greater than this. There is not enough room in the protocol block. */
@@ -542,9 +566,6 @@ typedef struct {
 	uint32_t sample_rate;
 	uint32_t channels;
 	uint32_t bits_per_sample;
-#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	FLAC__SampleType sample_type;
-#endif
 	FLAC__uint64 total_samples;
 	FLAC__byte md5sum[16];
 } FLAC__StreamMetadata_StreamInfo;
@@ -561,6 +582,30 @@ extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_MD5SUM_LEN; /**<
 
 /** The total stream length of the STREAMINFO block in bytes. */
 #define FLAC__STREAM_METADATA_STREAMINFO_LENGTH (34u)
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+/** FLAC STREAMINFO_EXTENSION structure.  See https://github.com/xiph/flac/pull/842
+ */
+typedef struct {
+	FLAC__float64 sample_rate;
+	uint32_t channels;
+	uint32_t channel_mask;
+	uint32_t bits_per_sample;
+	FLAC__SampleType sample_type;
+} FLAC__StreamMetadata_StreamInfo_Extension;
+
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_RATE_LEN; /**< == 64 (bits) */
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNELS_LEN; /**< == 8 (bits) */
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNEL_MASK_LEN; /**< == 32 (bits) */
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SPECIAL_MASK_LEN; /**< == 3 (bits) */
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_IGNORE_MASK_LEN; /**< == 2 (bits) */
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_FORMAT_LEN; /**< == 4 (bits) */
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_BITS_PER_SAMPLE_LEN; /**< == 7 (bits) */
+extern FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_RESERVED_LEN; /**< == 8 (bits) */
+
+/** The total stream length of the STREAMINFO block in bytes. */
+#define FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_LENGTH (16u)
+#endif
 
 /** FLAC PADDING structure.  (c.f. <A HREF="https://xiph.org/flac/format.html#metadata_block_padding">format specification</A>)
  */
@@ -864,6 +909,9 @@ typedef struct FLAC__StreamMetadata {
 		FLAC__StreamMetadata_VorbisComment vorbis_comment;
 		FLAC__StreamMetadata_CueSheet cue_sheet;
 		FLAC__StreamMetadata_Picture picture;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		FLAC__StreamMetadata_StreamInfo_Extension stream_info_extension;
+#endif
 		FLAC__StreamMetadata_Unknown unknown;
 	} data;
 	/**< Polymorphic block data; use the \a type value to determine which
@@ -886,7 +934,7 @@ extern FLAC_API const uint32_t FLAC__STREAM_METADATA_LENGTH_LEN; /**< == 24 (bit
  *
  *****************************************************************************/
 
-/** Tests that a sample rate is valid for FLAC.
+/** Tests that a sample rate is valid for FLAC (not extension).
  *
  * \param sample_rate  The sample rate to test for compliance.
  * \retval FLAC__bool
@@ -894,6 +942,26 @@ extern FLAC_API const uint32_t FLAC__STREAM_METADATA_LENGTH_LEN; /**< == 24 (bit
  *    \c false.
  */
 FLAC_API FLAC__bool FLAC__format_sample_rate_is_valid(uint32_t sample_rate);
+
+/** Tests that a sample rate is valid for FLAC (extension).
+ *
+ * \param sample_rate  The sample rate to test for compliance.
+ * \retval FLAC__bool
+ *    \c true if the given sample rate conforms to the specification, else
+ *    \c false.
+ */
+FLAC_API FLAC__bool FLAC__format_sample_rate_is_valid_extension(FLAC__float64 sample_rate);
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+/** Returns the corresponding string to the sample type.
+ *
+ * \param sample_type    The sample type.
+ * \retval const char*
+ *    \c "float" if the given sample_type is FLAC__SAMPLE_TYPE_FLOAT, \c "int"
+ *    if it's FLAC__SAMPLE_TYPE_INT, else \c "not_specified".
+ */
+FLAC_API const char* FLAC__get_sample_type_string(FLAC__SampleType sample_type);
+#endif
 
 /** Tests that a blocksize at the given sample rate is valid for the FLAC
  *  subset.
@@ -1029,7 +1097,7 @@ FLAC_API FLAC__bool FLAC__format_cuesheet_is_legal(const FLAC__StreamMetadata_Cu
  */
 FLAC_API FLAC__bool FLAC__format_picture_is_legal(const FLAC__StreamMetadata_Picture *picture, const char **violation);
 
-/* \} */
+/** \} */
 
 #ifdef __cplusplus
 }

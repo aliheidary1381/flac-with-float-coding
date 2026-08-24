@@ -598,8 +598,10 @@ found by \--keep-foreign-metadata-if-present or \--keep-foreign-metadata
 
 **\--force-aiff-c-none-format**  
 **\--force-aiff-c-sowt-format**
-:	Instruct the decoder to output an AIFF-C file with format NONE and
-	sowt respectively.
+**\--force-aiff-c-fl32-format**  
+**\--force-aiff-c-FL32-format**
+:	Instruct the decoder to output an AIFF-C file with format NONE,
+	sowt, FL32 or FL32 respectively.
 
 **\--force-raw-format**
 :	Force input (when encoding) or output (when decoding) to be treated
@@ -623,11 +625,17 @@ When encoding from or decoding to raw PCM, format must be specified.
 	interleaved, and in the order of the FLAC format (see the format
 	specification); the encoder (/decoder) cannot re-order channels.
 
+**\--channel-mask**=\#
+:	Specify the channel mask.
+
 **\--bps**=\#
 :	(Input only) specify bits per sample (per channel: 16 for CDDA.)
 
 **\--sample-rate**=\#
 :	(Input only) specify sample rate (in Hz. Only integers supported.)
+
+**\--sample-rate-extension**=\#
+:	(Input only) specify sample rate extension (in Hz. floating points are also supported.)
 
 **\--input-size**=\#
 :	(Input only) specify the size of the raw input in bytes. This option

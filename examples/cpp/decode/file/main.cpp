@@ -187,6 +187,16 @@ void OurDecoder::metadata_callback(const ::FLAC__StreamMetadata *metadata)
 		fprintf(stderr, "bits per sample: %u\n", bps);
 		fprintf(stderr, "total samples  : %" PRIu64 "\n", total_samples);
 	}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	else if(metadata->type == FLAC__METADATA_TYPE_STREAMINFO_EXTENSION) {
+		/* save for later */
+		fprintf(stderr, "sample rate    : %f Hz\n", metadata->data.stream_info_extension.sample_rate);
+		fprintf(stderr, "bits per sample: %u\n", metadata->data.stream_info_extension.bits_per_sample);
+		fprintf(stderr, "sample type    : %s\n", FLAC__get_sample_type_string(metadata->data.stream_info_extension.sample_type));
+		fprintf(stderr, "channels       : %u\n", metadata->data.stream_info_extension.channels);
+		fprintf(stderr, "channel mask   : %u\n", metadata->data.stream_info_extension.channel_mask);
+	}
+#endif
 }
 
 void OurDecoder::error_callback(::FLAC__StreamDecoderErrorStatus status)

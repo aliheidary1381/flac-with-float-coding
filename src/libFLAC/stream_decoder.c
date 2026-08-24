@@ -30,6 +30,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "FLAC/format.h"
+#include "FLAC/ordinals.h"
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
 #endif
@@ -82,6 +84,9 @@ static FLAC__bool has_id_filtered_(FLAC__StreamDecoder *decoder, FLAC__byte *id)
 static FLAC__bool find_metadata_(FLAC__StreamDecoder *decoder);
 static FLAC__bool read_metadata_(FLAC__StreamDecoder *decoder);
 static FLAC__bool read_metadata_streaminfo_(FLAC__StreamDecoder *decoder, FLAC__bool is_last, uint32_t length);
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+static FLAC__bool read_metadata_streaminfo_extension_(FLAC__StreamDecoder *decoder, FLAC__bool is_last, uint32_t length);
+#endif
 static FLAC__bool read_metadata_seektable_(FLAC__StreamDecoder *decoder, FLAC__bool is_last, uint32_t length);
 static FLAC__bool read_metadata_vorbiscomment_(FLAC__StreamDecoder *decoder, FLAC__StreamMetadata_VorbisComment *obj, uint32_t length);
 static FLAC__bool read_metadata_cuesheet_(FLAC__StreamDecoder *decoder, FLAC__StreamMetadata_CueSheet *obj);
@@ -146,6 +151,10 @@ typedef struct FLAC__StreamDecoderPrivate {
 	FLAC__bool has_stream_info, has_seek_table;
 	FLAC__StreamMetadata stream_info;
 	FLAC__StreamMetadata seek_table;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	FLAC__bool has_stream_info_extension;
+	FLAC__StreamMetadata stream_info_extension;
+#endif
 	FLAC__bool metadata_filter[128]; /* MAGIC number 128 == total number of metadata block types == 1 << 7 */
 	FLAC__byte *metadata_filter_ids;
 	size_t metadata_filter_ids_count, metadata_filter_ids_capacity; /* units for both are IDs, not bytes */
@@ -417,6 +426,9 @@ static FLAC__StreamDecoderInitStatus init_stream_internal_(
 	decoder->private_->fixed_block_size = decoder->private_->next_fixed_block_size = 0;
 	decoder->private_->samples_decoded = 0;
 	decoder->private_->has_stream_info = false;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	decoder->private_->has_stream_info_extension = false;
+#endif
 	decoder->private_->cached = false;
 
 	decoder->private_->do_md5_checking = decoder->protected_->md5_checking;
@@ -881,6 +893,20 @@ FLAC_API FLAC__SampleType FLAC__stream_decoder_get_sample_type(const FLAC__Strea
 	FLAC__ASSERT(0 != decoder->protected_);
 	return decoder->protected_->sample_type;
 }
+
+FLAC_API uint32_t FLAC__stream_decoder_get_channel_mask(const FLAC__StreamDecoder *decoder)
+{
+	FLAC__ASSERT(0 != decoder);
+	FLAC__ASSERT(0 != decoder->protected_);
+	return decoder->protected_->channel_mask;
+}
+
+FLAC_API FLAC__float64 FLAC__stream_decoder_get_sample_rate_extension(const FLAC__StreamDecoder *decoder)
+{
+	FLAC__ASSERT(0 != decoder);
+	FLAC__ASSERT(0 != decoder->protected_);
+	return decoder->protected_->sample_rate_extension;
+}
 #endif
 
 FLAC_API FLAC__ChannelAssignment FLAC__stream_decoder_get_channel_assignment(const FLAC__StreamDecoder *decoder)
@@ -974,6 +1000,9 @@ void reset_decoder_internal_(FLAC__StreamDecoder* decoder) {
 	decoder->protected_->state = FLAC__STREAM_DECODER_SEARCH_FOR_METADATA;
 
 	decoder->private_->has_stream_info = false;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	decoder->private_->has_stream_info_extension = false;
+#endif
 
 	free(decoder->private_->seek_table.data.seek_table.points);
 	decoder->private_->seek_table.data.seek_table.points = 0;
@@ -1554,6 +1583,9 @@ void set_defaults_(FLAC__StreamDecoder *decoder)
 
 	memset(decoder->private_->metadata_filter, 0, sizeof(decoder->private_->metadata_filter));
 	decoder->private_->metadata_filter[FLAC__METADATA_TYPE_STREAMINFO] = true;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+    decoder->private_->metadata_filter[FLAC__METADATA_TYPE_STREAMINFO_EXTENSION] = true;
+#endif
 	decoder->private_->metadata_filter_ids_count = 0;
 
 	decoder->protected_->md5_checking = false;
@@ -1754,6 +1786,16 @@ FLAC__bool read_metadata_(FLAC__StreamDecoder *decoder)
 		if(!decoder->private_->is_seeking && decoder->private_->metadata_filter[FLAC__METADATA_TYPE_STREAMINFO] && decoder->private_->metadata_callback)
 			decoder->private_->metadata_callback(decoder, &decoder->private_->stream_info, decoder->private_->client_data);
 	}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	else if(type == FLAC__METADATA_TYPE_STREAMINFO_EXTENSION) {
+		if(!read_metadata_streaminfo_extension_(decoder, is_last, length))
+			return false;
+
+		decoder->private_->has_stream_info_extension = true;
+		if(!decoder->private_->is_seeking && decoder->private_->metadata_filter[FLAC__METADATA_TYPE_STREAMINFO_EXTENSION] && decoder->private_->metadata_callback)
+			decoder->private_->metadata_callback(decoder, &decoder->private_->stream_info_extension, decoder->private_->client_data);
+	}
+#endif
 	else if(type == FLAC__METADATA_TYPE_SEEKTABLE) {
 		/* just in case we already have a seek table, and reading the next one fails: */
 		decoder->private_->has_seek_table = false;
@@ -1831,6 +1873,9 @@ FLAC__bool read_metadata_(FLAC__StreamDecoder *decoder)
 						ok = false;
 					break;
 				case FLAC__METADATA_TYPE_STREAMINFO:
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+				case FLAC__METADATA_TYPE_STREAMINFO_EXTENSION:
+#endif
 				case FLAC__METADATA_TYPE_SEEKTABLE:
 					FLAC__ASSERT(0);
 					break;
@@ -1895,6 +1940,9 @@ FLAC__bool read_metadata_(FLAC__StreamDecoder *decoder)
 						free(block.data.picture.data);
 					break;
 				case FLAC__METADATA_TYPE_STREAMINFO:
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+				case FLAC__METADATA_TYPE_STREAMINFO_EXTENSION:
+#endif
 				case FLAC__METADATA_TYPE_SEEKTABLE:
 					FLAC__ASSERT(0);
 				default:
@@ -1968,13 +2016,6 @@ FLAC__bool read_metadata_streaminfo_(FLAC__StreamDecoder *decoder, FLAC__bool is
 	bits = FLAC__STREAM_METADATA_STREAMINFO_BITS_PER_SAMPLE_LEN;
 	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, FLAC__STREAM_METADATA_STREAMINFO_BITS_PER_SAMPLE_LEN))
 		return false; /* read_callback_ sets the state for us */
-#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	if(x == 0) {
-		decoder->private_->stream_info.data.stream_info.bits_per_sample = 32;
-		decoder->private_->stream_info.data.stream_info.sample_type = FLAC__SAMPLE_TYPE_FLOAT;
-	}
-	else
-#endif
 	decoder->private_->stream_info.data.stream_info.bits_per_sample = x+1;
 	used_bits += bits;
 
@@ -1997,6 +2038,77 @@ FLAC__bool read_metadata_streaminfo_(FLAC__StreamDecoder *decoder, FLAC__bool is
 
 	return true;
 }
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+FLAC__bool read_metadata_streaminfo_extension_(FLAC__StreamDecoder *decoder, FLAC__bool is_last, uint32_t length)
+{
+	FLAC__uint32 x;
+	FLAC__float64 xx;
+	uint32_t bits, used_bits = 0;
+
+	FLAC__ASSERT(FLAC__bitreader_is_consumed_byte_aligned(decoder->private_->input));
+
+	decoder->private_->stream_info_extension.type = FLAC__METADATA_TYPE_STREAMINFO_EXTENSION;
+	decoder->private_->stream_info_extension.is_last = is_last;
+	decoder->private_->stream_info_extension.length = length;
+
+	bits = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_RATE_LEN;
+	if(!FLAC__bitreader_read_raw_float64(decoder->private_->input, &xx))
+		return false; /* read_callback_ sets the state for us */
+	decoder->private_->stream_info_extension.data.stream_info_extension.sample_rate = xx;
+	used_bits += bits;
+
+	bits = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNELS_LEN;
+	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNELS_LEN))
+		return false; /* read_callback_ sets the state for us */
+	decoder->private_->stream_info_extension.data.stream_info_extension.channels = x+1;
+	used_bits += bits;
+
+	bits = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNEL_MASK_LEN;
+	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNEL_MASK_LEN))
+		return false; /* read_callback_ sets the state for us */
+	decoder->private_->stream_info_extension.data.stream_info_extension.channel_mask = x;
+	used_bits += bits;
+
+	bits = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SPECIAL_MASK_LEN + FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_IGNORE_MASK_LEN;
+	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, bits))
+		return false; /* read_callback_ sets the state for us */
+	// Currently ignored
+	used_bits += bits;
+
+	bits = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_FORMAT_LEN;
+	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_FORMAT_LEN))
+		return false; /* read_callback_ sets the state for us */
+	decoder->private_->stream_info_extension.data.stream_info_extension.sample_type = x;
+	used_bits += bits;
+
+	bits = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_BITS_PER_SAMPLE_LEN;
+	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_BITS_PER_SAMPLE_LEN))
+		return false; /* read_callback_ sets the state for us */
+	decoder->private_->stream_info_extension.data.stream_info_extension.bits_per_sample = x+1;
+	used_bits += bits;
+
+	bits = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_RESERVED_LEN;
+	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_RESERVED_LEN))
+		return false; /* read_callback_ sets the state for us */
+	// Currently ignored
+	used_bits += bits;
+
+	/* skip the rest of the block */
+	FLAC__ASSERT(used_bits % 8 == 0);
+	if (length < (used_bits / 8))
+		return false; /* read_callback_ sets the state for us */
+	length -= (used_bits / 8);
+	if(!FLAC__bitreader_skip_byte_block_aligned_no_crc(decoder->private_->input, length))
+		return false; /* read_callback_ sets the state for us */
+
+	decoder->protected_->sample_type = decoder->private_->stream_info_extension.data.stream_info_extension.sample_type;
+	decoder->protected_->sample_rate_extension = decoder->private_->stream_info_extension.data.stream_info_extension.sample_rate;
+	decoder->protected_->channel_mask = decoder->private_->stream_info_extension.data.stream_info_extension.channel_mask;
+
+	return true;
+}
+#endif
 
 FLAC__bool read_metadata_seektable_(FLAC__StreamDecoder *decoder, FLAC__bool is_last, uint32_t length)
 {
@@ -2805,8 +2917,13 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 
 	switch(x = (uint32_t)(raw_header[3] & 0x0e) >> 1) {
 		case 0:
-			if(decoder->private_->has_stream_info)
+			if(decoder->private_->has_stream_info) {
 				decoder->private_->frame.header.bits_per_sample = decoder->private_->stream_info.data.stream_info.bits_per_sample;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+				if(decoder->private_->frame.header.bits_per_sample == 1)
+					decoder->private_->frame.header.bits_per_sample = decoder->private_->stream_info.data.stream_info_extension.bits_per_sample;
+#endif
+			}
 			else
 				is_unparseable = true;
 			break;
@@ -3608,6 +3725,7 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 		decoder->private_->got_a_frame = true;
 
 		if(this_frame_sample <= target_sample && target_sample < next_frame_sample) { /* we hit our target frame */
+			uint32_t delta;
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 			if(decoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
@@ -3617,7 +3735,7 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 			}
 #endif
 
-			uint32_t delta = (uint32_t)(target_sample - this_frame_sample);
+			delta = (uint32_t)(target_sample - this_frame_sample);
 			/* kick out of seek mode */
 			decoder->private_->is_seeking = false;
 			/* shift out the samples before target_sample */
@@ -3703,6 +3821,13 @@ FLAC__bool seek_to_absolute_sample_(FLAC__StreamDecoder *decoder, FLAC__uint64 s
 		channels = decoder->private_->stream_info.data.stream_info.channels;
 	if(bps == 0)
 		bps = decoder->private_->stream_info.data.stream_info.bits_per_sample;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(bps == 1) {
+		bps = decoder->private_->stream_info_extension.data.stream_info_extension.bits_per_sample;
+		if(channels == 1)
+			channels = decoder->private_->stream_info_extension.data.stream_info_extension.channels;
+	}
+#endif
 
 	/* we are just guessing here */
 	if(max_framesize > 0)

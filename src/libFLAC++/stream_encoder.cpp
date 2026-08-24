@@ -30,6 +30,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "FLAC/stream_encoder.h"
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -98,6 +99,18 @@ namespace FLAC {
 		{
 			FLAC__ASSERT(is_valid());
 			return static_cast<bool>(::FLAC__stream_encoder_set_sample_type(encoder_, value));
+		}
+
+		bool Stream::set_channel_mask(uint32_t value)
+		{
+			FLAC__ASSERT(is_valid());
+			return static_cast<bool>(::FLAC__stream_encoder_set_channel_mask(encoder_, value));
+		}
+
+		bool Stream::set_sample_rate_extension(FLAC__float64 value)
+		{
+			FLAC__ASSERT(is_valid());
+			return static_cast<bool>(::FLAC__stream_encoder_set_sample_rate_extension(encoder_, value));
 		}
 #endif
 
@@ -284,6 +297,18 @@ namespace FLAC {
 		{
 			FLAC__ASSERT(is_valid());
 			return ::FLAC__stream_encoder_get_sample_type(encoder_);
+		}
+
+		uint32_t Stream::get_channel_mask() const
+		{
+			FLAC__ASSERT(is_valid());
+			return ::FLAC__stream_encoder_get_channel_mask(encoder_);
+		}
+
+		FLAC__float64 Stream::get_sample_rate_extension() const
+		{
+			FLAC__ASSERT(is_valid());
+			return ::FLAC__stream_encoder_get_sample_rate_extension(encoder_);
 		}
 #endif
 

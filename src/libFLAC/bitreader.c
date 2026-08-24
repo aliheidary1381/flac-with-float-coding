@@ -30,6 +30,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "FLAC/ordinals.h"
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
 #endif
@@ -576,6 +577,25 @@ inline FLAC__bool FLAC__bitreader_read_uint32_little_endian(FLAC__BitReader *br,
 	*val = x32;
 	return true;
 }
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+FLAC__bool FLAC__bitreader_read_raw_float64(FLAC__BitReader *br, FLAC__float64 *val)
+{
+    FLAC__uint64 temp;
+    union {
+        FLAC__uint64 i;
+        FLAC__float64 f;
+    } u;
+
+    if (!FLAC__bitreader_read_raw_uint64(br, &temp, 64))
+        return false;
+
+    u.i = temp;
+    *val = u.f;
+
+    return true;
+}
+#endif
 
 FLAC__bool FLAC__bitreader_skip_bits_no_crc(FLAC__BitReader *br, uint32_t bits)
 {

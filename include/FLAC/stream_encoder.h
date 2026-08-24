@@ -34,6 +34,7 @@
 #define FLAC__STREAM_ENCODER_H
 
 #include <stdio.h> /* for FILE */
+#include "FLAC/ordinals.h"
 #include "export.h"
 #include "format.h"
 #include "stream_decoder.h"
@@ -795,6 +796,30 @@ FLAC_API FLAC__bool FLAC__stream_encoder_set_channels(FLAC__StreamEncoder *encod
  *    \c false if the encoder is already initialized, else \c true.
  */
 FLAC_API FLAC__bool FLAC__stream_encoder_set_sample_type(FLAC__StreamEncoder *encoder, FLAC__SampleType value);
+
+/** Set the channel mask of the input to be encoded.
+ *
+ * \default \c 0
+ * \param  encoder  An encoder instance to set.
+ * \param  value    WAVEFORMATEXTENSIBLE
+ * \assert
+ *    \code encoder != NULL \endcode
+ * \retval FLAC__bool
+ *    \c false if the encoder is already initialized, else \c true.
+ */
+FLAC_API FLAC__bool FLAC__stream_encoder_set_channel_mask(FLAC__StreamEncoder *encoder, uint32_t value);
+
+/** Set the sample rate (in Hz) of the input to be encoded.
+ *
+ * \default \c 44100
+ * \param  encoder  An encoder instance to set.
+ * \param  value    See above.
+ * \assert
+ *    \code encoder != NULL \endcode
+ * \retval FLAC__bool
+ *    \c false if the encoder is already initialized, else \c true.
+ */
+FLAC_API FLAC__bool FLAC__stream_encoder_set_sample_rate_extension(FLAC__StreamEncoder *encoder, FLAC__float64 value);
 #endif
 
 /** Set the sample resolution of the input to be encoded.
@@ -1217,6 +1242,7 @@ FLAC_API FLAC__bool FLAC__stream_encoder_set_total_samples_estimate(FLAC__Stream
  * \note
  * The STREAMINFO block is always written and no STREAMINFO block may
  * occur in the supplied array.
+ * Same for STREAMINFO_EXTENSION, if necessary.
  *
  * \note
  * By default the encoder does not create a SEEKTABLE.  If one is supplied
@@ -1396,6 +1422,25 @@ FLAC_API uint32_t FLAC__stream_encoder_get_channels(const FLAC__StreamEncoder *e
  *    FLAC__SAMPLE_TYPE_FLOAT if samples are in IEEE 754 binary32 format, FLAC__SAMPLE_TYPE_INT otherwise.
  */
 FLAC_API FLAC__SampleType FLAC__stream_encoder_get_sample_type(const FLAC__StreamEncoder *encoder);
+
+/** Get the input channel mask setting.
+ *
+ * \param  encoder  An encoder instance to query.
+ * \assert
+ *    \code encoder != NULL \endcode
+ * \retval uint32_t
+ */
+FLAC_API uint32_t FLAC__stream_encoder_get_channel_mask(const FLAC__StreamEncoder *encoder);
+
+/** Get the input sample rate setting (extension).
+ *
+ * \param  encoder  An encoder instance to query.
+ * \assert
+ *    \code encoder != NULL \endcode
+ * \retval FLAC__float64
+ *    See FLAC__stream_encoder_set_sample_rate().
+ */
+FLAC_API FLAC__float64 FLAC__stream_encoder_get_sample_rate_extension(const FLAC__StreamEncoder *encoder);
 #endif
 
 /** Get the input sample resolution setting.
@@ -1921,7 +1966,7 @@ FLAC_API FLAC__bool FLAC__stream_encoder_process(FLAC__StreamEncoder *encoder, c
  */
 FLAC_API FLAC__bool FLAC__stream_encoder_process_interleaved(FLAC__StreamEncoder *encoder, const FLAC__int32 buffer[], uint32_t samples);
 
-/* \} */
+/** \} */
 
 #ifdef __cplusplus
 }

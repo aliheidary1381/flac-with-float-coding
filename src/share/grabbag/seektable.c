@@ -17,6 +17,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include "FLAC/format.h"
+#include "FLAC/ordinals.h"
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
 #endif
@@ -27,7 +29,7 @@
 #include <stdlib.h> /* for atoi() */
 #include <string.h>
 
-FLAC__bool grabbag__seektable_convert_specification_to_template(const char *spec, FLAC__bool only_explicit_placeholders, FLAC__uint64 total_samples_to_encode, uint32_t sample_rate, FLAC__StreamMetadata *seektable_template, FLAC__bool *spec_has_real_points)
+FLAC__bool grabbag__seektable_convert_specification_to_template(const char *spec, FLAC__bool only_explicit_placeholders, FLAC__uint64 total_samples_to_encode, FLAC__float64 sample_rate, FLAC__StreamMetadata *seektable_template, FLAC__bool *spec_has_real_points)
 {
 	uint32_t i;
 	const char *pt;
@@ -61,13 +63,13 @@ FLAC__bool grabbag__seektable_convert_specification_to_template(const char *spec
 				}
 			}
 			else if(q[-1] == 's') { /* -S #s */
-				if(total_samples_to_encode > 0 && sample_rate > 0) { /* we can only do these if we know the number of samples and sample rate to encode up front */
+				if(total_samples_to_encode > 0 && FLAC__format_sample_rate_is_valid_extension(sample_rate)) { /* we can only do these if we know the number of samples and sample rate to encode up front */
 					if(0 != spec_has_real_points)
 						*spec_has_real_points = true;
 					if(!only_explicit_placeholders) {
 						const double sec = atof(pt);
 						if(sec > 0.0) {
-							uint32_t samples = (uint32_t)(sec * (double)sample_rate);
+							uint32_t samples = (uint32_t)(sec * sample_rate);
 							/* Restrict seekpoints to two per second of audio. */
 							samples = samples < sample_rate / 2 ? sample_rate / 2 : samples;
 							if(samples > 0) {

@@ -17,6 +17,8 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
+#include "FLAC/format.h"
+#include "FLAC/ordinals.h"
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
 #endif
@@ -69,6 +71,7 @@ struct share__option long_options_[] = {
 	{ "set-bps", 1, 0, 0 }, /* undocumented */
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	{ "set-sample-type", 1, 0, 0 }, /* undocumented */
+	{ "set-sample-rate-extension", 1, 0, 0 }, /* undocumented */
 #endif
 	{ "set-total-samples", 1, 0, 0 }, /* undocumented */ /* WATCHOUT: used by test/test_flac.sh on windows */
 	{ "show-vendor-tag", 0, 0, 0 },
@@ -121,6 +124,9 @@ static Argument *append_argument(CommandLineOptions *options, ArgumentType type)
 static FLAC__bool parse_md5(const char *src, FLAC__byte dest[16]);
 static FLAC__bool parse_uint32(const char *src, FLAC__uint32 *dest);
 static FLAC__bool parse_uint64(const char *src, FLAC__uint64 *dest);
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+static FLAC__bool parse_float64(const char *src, FLAC__float64 *dest);
+#endif
 static FLAC__bool parse_string(const char *src, char **dest);
 static FLAC__bool parse_vorbis_comment_field_name(const char *field_ref, char **name, const char **violation);
 static FLAC__bool parse_vorbis_comment_field_names(const char *field_ref, char **names, const char **violation);
@@ -422,6 +428,9 @@ FLAC__bool parse_option(int option_index, const char *option_argument, CommandLi
 	else if(0 == strcmp(opt, "show-sample-type")) {
 		(void)append_shorthand_operation(options, OP__SHOW_SAMPLE_TYPE);
 	}
+	else if(0 == strcmp(opt, "show-sample-channel-mask")) {
+		(void)append_shorthand_operation(options, OP__SHOW_CHANNEL_MASK);
+	}
 #endif
 	else if(0 == strcmp(opt, "show-total-samples")) {
 		(void) append_shorthand_operation(options, OP__SHOW_TOTAL_SAMPLES);
@@ -515,6 +524,15 @@ FLAC__bool parse_option(int option_index, const char *option_argument, CommandLi
 			flac_fprintf(stderr, "ERROR (--%s): value must be \"float\" (or \"IEEE754\" or \"binary32\") or \"int\" (or \"integer\")\n", opt);
 			ok = false;
 		}
+	}
+	else if(0 == strcmp(opt, "set-sample-rate-extension")) {
+		op = append_shorthand_operation(options, OP__SET_SAMPLE_RATE_EXTENSION);
+		if(!parse_float64(option_argument, &(op->argument.streaminfo_extention_float64.value)) || !FLAC__format_sample_rate_is_valid_extension(op->argument.streaminfo_extention_float64.value)) {
+			flac_fprintf(stderr, "ERROR (--%s): invalid sample rate\n", opt);
+			ok = false;
+		}
+		else
+			undocumented_warning(opt);
 	}
 #endif
 	else if(0 == strcmp(opt, "set-total-samples")) {
@@ -917,6 +935,17 @@ FLAC__bool parse_uint64(const char *src, FLAC__uint64 *dest)
 	return true;
 }
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+FLAC__bool parse_float64(const char *src, FLAC__float64 *dest)
+{
+	FLAC__ASSERT(0 != src);
+	if (strlen(src) == 0 || strspn(src, "0123456789.") != strlen(src))
+        return false;
+	*dest = strtod(src, 0);
+	return true;
+}
+#endif
+
 FLAC__bool parse_string(const char *src, char **dest)
 {
 	if(0 == src || strlen(src) == 0)
@@ -1102,6 +1131,11 @@ FLAC__bool parse_block_type(const char *in, Argument_BlockType *out)
 		if(0 == strcmp(q, "STREAMINFO")) {
 			out->entries[entry++].type = FLAC__METADATA_TYPE_STREAMINFO;
 		}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		else if(0 == strcmp(q, "STREAMINFO_EXTENSION")) {
+			out->entries[entry++].type = FLAC__METADATA_TYPE_STREAMINFO_EXTENSION;
+		}
+#endif
 		else if(0 == strcmp(q, "PADDING")) {
 			out->entries[entry++].type = FLAC__METADATA_TYPE_PADDING;
 		}
