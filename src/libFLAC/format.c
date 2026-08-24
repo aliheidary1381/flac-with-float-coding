@@ -72,6 +72,18 @@ FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_BITS_PER_SAMPLE_LEN = 5
 FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_TOTAL_SAMPLES_LEN = 36; /* bits */
 FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_MD5SUM_LEN = 128; /* bits */
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_RATE_LEN = 64; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNELS_LEN = 8; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNEL_MASK_LEN = 32; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SPECIAL_MASK_LEN = 3; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_IGNORE_MASK_LEN = 2; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_FORMAT_LEN = 4; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_BITS_PER_SAMPLE_LEN = 7; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_RESERVED_LEN = 8; /* bits */
+FLAC_API const uint32_t FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_MD5SUM_LEN = 128; /* bits */
+#endif
+
 FLAC_API const uint32_t FLAC__STREAM_METADATA_APPLICATION_ID_LEN = 32; /* bits */
 
 FLAC_API const uint32_t FLAC__STREAM_METADATA_SEEKPOINT_SAMPLE_NUMBER_LEN = 64; /* bits */
@@ -179,7 +191,12 @@ FLAC_API const char * const FLAC__MetadataTypeString[] = {
 	"SEEKTABLE",
 	"VORBIS_COMMENT",
 	"CUESHEET",
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	"PICTURE",
+	"STREAMINFO_EXTENSION"
+#else
 	"PICTURE"
+#endif
 };
 
 FLAC_API const char * const FLAC__StreamMetadata_Picture_TypeString[] = {
@@ -214,6 +231,37 @@ FLAC_API FLAC__bool FLAC__format_sample_rate_is_valid(uint32_t sample_rate)
 	else
 		return true;
 }
+
+FLAC_API FLAC__bool FLAC__format_sample_rate_is_valid_extension(FLAC__float64 sample_rate)
+{
+	uint64_t bits;
+	union {
+        FLAC__float64 d;
+        uint64_t u;
+    } pun;
+    pun.d = sample_rate;
+    bits = pun.u;
+
+    if (bits >> 63)
+        return false; // negative
+
+    bits = bits << 1 >> 53;
+    if (bits == 0 || bits == 0x7ff)
+    	return false; // NaN or inf or subnormal or zero
+
+    return true;
+}
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+const char* FLAC__get_sample_type_string(FLAC__SampleType sample_type) {
+    if(sample_type == FLAC__SAMPLE_TYPE_FLOAT)
+        return "float";
+    else if(sample_type == FLAC__SAMPLE_TYPE_INT)
+        return "int";
+    else
+        return "not_specified";
+}
+#endif
 
 FLAC_API FLAC__bool FLAC__format_blocksize_is_subset(uint32_t blocksize, uint32_t sample_rate)
 {

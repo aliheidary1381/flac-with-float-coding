@@ -826,7 +826,7 @@ FLAC_API FLAC__bool FLAC__stream_decoder_set_ogg_serial_number(FLAC__StreamDecod
  *
  * \default \c false
  * \param  decoder          A decoder instance to set.
- * \param  allow            Whether to allow chained streams.
+ * \param  value            Whether to allow chained streams.
  * \assert
  *    \code decoder != NULL \endcode
  * \retval FLAC__bool
@@ -1045,6 +1045,27 @@ FLAC_API uint32_t FLAC__stream_decoder_get_channels(const FLAC__StreamDecoder *d
  *    FLAC__SAMPLE_TYPE_FLOAT if samples are in IEEE 754 binary32 format, FLAC__SAMPLE_TYPE_INT otherwise.
  */
 FLAC_API FLAC__SampleType FLAC__stream_decoder_get_sample_type(const FLAC__StreamDecoder *decoder);
+
+/** Get the current channel mask in the stream being decoded.
+ *
+ * \param  decoder  A decoder instance to query.
+ * \assert
+ *    \code decoder != NULL \endcode
+ * \retval uint32_t
+ *    See above.
+ */
+FLAC_API uint32_t FLAC__stream_decoder_get_channel_mask(const FLAC__StreamDecoder *decoder);
+
+/** Get the current sample rate in Hz of the stream being decoded.
+ *  Will only be valid if STREAMINFO_EXTENSION were present.
+ *
+ * \param  decoder  A decoder instance to query.
+ * \assert
+ *    \code decoder != NULL \endcode
+ * \retval FLAC__float64
+ *    See above.
+ */
+FLAC_API FLAC__float64 FLAC__stream_decoder_get_sample_rate_extension(const FLAC__StreamDecoder *decoder);
 #endif
 
 /** Get the current channel assignment in the stream being decoded.
@@ -1793,7 +1814,7 @@ FLAC_API FLAC__bool FLAC__stream_decoder_skip_single_link(FLAC__StreamDecoder *d
  */
 FLAC_API FLAC__bool FLAC__stream_decoder_seek_absolute(FLAC__StreamDecoder *decoder, FLAC__uint64 sample);
 
-/* \} */
+/** \} */
 
 #ifdef __cplusplus
 }

@@ -33,6 +33,10 @@
 #ifndef FLAC__ORDINALS_H
 #define FLAC__ORDINALS_H
 
+#ifdef HAVE_CONFIG_H
+#  include <config.h>
+#endif
+
 /* This of course assumes C99 headers */
 
 #include <stdint.h>
@@ -51,5 +55,7 @@ typedef uint64_t FLAC__uint64;
 typedef int FLAC__bool;
 
 typedef FLAC__uint8 FLAC__byte;
+
+typedef double FLAC__float64;
 
 #endif

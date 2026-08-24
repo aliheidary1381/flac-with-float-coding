@@ -98,16 +98,19 @@ modification time is set to the current time):
 :	Show the maximum frame size from the STREAMINFO block.
 
 **\--show-sample-rate**  
-:	Show the sample rate from the STREAMINFO block.
+:	Show the sample rate from the STREAMINFO (or STREAMINFO_EXTENSION) block.
 
 **\--show-channels**  
-:	Show the number of channels from the STREAMINFO block.
+:	Show the number of channels from the STREAMINFO (or STREAMINFO_EXTENSION) block.
+
+**\--show-channel-mask**  
+:	Show the WAVEFORMATEXTENSIBLE channel mask from the STREAMINFO_EXTENSION block.
 
 **\--show-sample-type**  
-:	Show if the audio samples are integer or floating-point from the STREAMINFO block.
+:	Show if the audio samples are integer or floating-point from the STREAMINFO_EXTENSION block.
 
 **\--show-bps**  
-:	Show the \# of bits per sample from the STREAMINFO block.
+:	Show the \# of bits per sample from the STREAMINFO (or STREAMINFO_EXTENSION) block.
 
 **\--show-total-samples**  
 :	Show the total \# of samples from the STREAMINFO block.

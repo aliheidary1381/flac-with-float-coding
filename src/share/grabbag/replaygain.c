@@ -139,8 +139,7 @@ FLAC__bool grabbag__replaygain_analyze(const FLAC__int32 * const input[], FLAC__
 	FLAC__int32 block_peak = 0, s;
 	uint32_t i, j;
 
-	FLAC__ASSERT(bps > 0 && bps <= FLAC__MAX_BITS_PER_SAMPLE);
-	FLAC__ASSERT(FLAC__MAX_BITS_PER_SAMPLE == 32);
+	FLAC__ASSERT(bps > 0 && bps <= 32);
 
 	if(bps == 16) {
 		if(is_stereo) {

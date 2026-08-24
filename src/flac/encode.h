@@ -20,6 +20,7 @@
 #ifndef flac__encode_h
 #define flac__encode_h
 
+#include "FLAC/ordinals.h"
 #ifdef HAVE_CONFIG_H
 #  include <config.h>
 #endif
@@ -97,6 +98,8 @@ typedef struct {
 			FLAC__bool is_unsigned_samples;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 			FLAC__SampleType sample_type;
+			FLAC__float64 sample_rate_extension;
+			FLAC__uint32 channel_mask;
 #endif
 			unsigned channels;
 			unsigned bps;

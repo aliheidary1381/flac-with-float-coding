@@ -21,6 +21,7 @@
 #define metaflac__options_h
 
 #include "FLAC/format.h"
+#include "FLAC/ordinals.h"
 
 #if 0
 /*[JEC] was:#if HAVE_GETOPT_LONG*/
@@ -43,6 +44,7 @@ typedef enum {
 	OP__SHOW_BPS,
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	OP__SHOW_SAMPLE_TYPE,
+	OP__SHOW_CHANNEL_MASK,
 #endif
 	OP__SHOW_TOTAL_SAMPLES,
 	OP__SET_MD5SUM,
@@ -55,6 +57,8 @@ typedef enum {
 	OP__SET_BPS,
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	OP__SET_SAMPLE_TYPE,
+	OP__SET_CHANNEL_MASK,
+	OP__SET_SAMPLE_RATE_EXTENSION,
 #endif
 	OP__SET_TOTAL_SAMPLES,
 	OP__SHOW_VC_VENDOR,
@@ -101,6 +105,12 @@ typedef struct {
 typedef struct {
 	FLAC__uint64 value;
 } Argument_StreaminfoUInt64;
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+typedef struct {
+	FLAC__float64 value;
+} Argument_StreaminfoFloat64;
+#endif
 
 typedef struct {
 	char *value;
@@ -168,6 +178,9 @@ typedef struct {
 		Argument_StreaminfoMD5 streaminfo_md5;
 		Argument_StreaminfoUInt32 streaminfo_uint32;
 		Argument_StreaminfoUInt64 streaminfo_uint64;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		Argument_StreaminfoFloat64 streaminfo_extention_float64;
+#endif
 		Argument_VcFieldName vc_field_name;
 		Argument_VcField vc_field;
 		Argument_String filename;

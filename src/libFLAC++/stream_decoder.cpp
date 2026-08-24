@@ -30,6 +30,8 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "FLAC/stream_decoder.h"
+#include "FLAC/ordinals.h"
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif
@@ -163,6 +165,18 @@ namespace FLAC {
 		{
 			FLAC__ASSERT(is_valid());
 			return ::FLAC__stream_decoder_get_sample_type(decoder_);
+		}
+
+		uint32_t Stream::get_channel_mask() const
+		{
+			FLAC__ASSERT(is_valid());
+			return ::FLAC__stream_decoder_get_channel_mask(decoder_);
+		}
+
+		FLAC__float64 Stream::get_sample_rate_extension() const
+		{
+			FLAC__ASSERT(is_valid());
+			return ::FLAC__stream_decoder_get_sample_rate_extension(decoder_);
 		}
 #endif
 
