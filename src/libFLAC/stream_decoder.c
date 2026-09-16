@@ -2832,6 +2832,11 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 	}
 	decoder->private_->frame.header.has_extension = has_extension;
 	decoder->private_->frame.header.extension_mode = extension_mode;
+	if(!has_extension) {
+		decoder->private_->frame.header.sample_type = FLAC__SAMPLE_TYPE_INT;
+		decoder->private_->frame.header.sample_rate_extension = 0.0;
+		decoder->private_->frame.header.channel_mask = 0;
+	}
 #endif
 
 	switch(x = raw_header[2] >> 4) {
@@ -3117,19 +3122,16 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 		else {
 			/* Full Mode: 128 bits (16 bytes) */
 			FLAC__float64 sr_f64;
+			FLAC__uint64 sr_bits;
 			FLAC__uint32 mask;
 			uint32_t special_mask, ignore_mask, decorr, reserved, st;
-			union {
-				FLAC__float64 f;
-				FLAC__uint64 i;
-			} u_sr;
 
 			/* 1. 64-bit IEEE 754 float64 sample rate */
 			if(!FLAC__bitreader_read_raw_float64(decoder->private_->input, &sr_f64))
 				return false;
-			u_sr.f = sr_f64;
+			memcpy(&sr_bits, &sr_f64, sizeof(sr_bits));
 			for(i = 0; i < 8; i++)
-				raw_header[raw_header_len++] = (FLAC__byte)(u_sr.i >> (56 - i * 8));
+				raw_header[raw_header_len++] = (FLAC__byte)(sr_bits >> (56 - i * 8));
 			decoder->private_->frame.header.sample_rate_extension = sr_f64;
 			decoder->private_->frame.header.sample_rate = (uint32_t)rint(sr_f64);
 
@@ -3888,8 +3890,9 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 			uint32_t delta;
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-			if(decoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
-				for(uint32_t channel = 0; channel < frame->header.channels; channel++) {
+			if(frame->header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+				uint32_t channel;
+				for(channel = 0; channel < frame->header.channels; channel++) {
 					FLAC__transform_i32_signal_to_f32_buffer(buffer[channel], frame->header.blocksize);
 				}
 			}
@@ -3935,8 +3938,9 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 		}
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-		if(decoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
-			for(uint32_t channel = 0; channel < frame->header.channels; channel++) {
+		if(frame->header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+			uint32_t channel;
+			for(channel = 0; channel < frame->header.channels; channel++) {
 				FLAC__transform_i32_signal_to_f32_buffer(buffer[channel], frame->header.blocksize);
 			}
 		}

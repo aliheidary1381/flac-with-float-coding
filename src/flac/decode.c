@@ -82,7 +82,7 @@ typedef struct {
 	FLAC__bool is_big_endian;
 	FLAC__bool is_unsigned_samples;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	FLAC__bool sample_type;
+	FLAC__SampleType sample_type;
 	FLAC__float64 sample_rate_extension;
 	FLAC__bool got_stream_info_extension;
 #endif
@@ -283,7 +283,7 @@ FLAC__bool DecoderSession_construct(DecoderSession *d, FLAC__bool is_ogg, FLAC__
 	d->bps = 0;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	d->got_stream_info_extension = false;
-	d->sample_type = FLAC__SAMPLE_TYPE_INT;
+	d->sample_type = FLAC__SAMPLE_TYPE_NOT_SPECIFIED;
 	d->sample_rate_extension = 0.0;
 #endif
 	d->channels = 0;
@@ -1432,6 +1432,9 @@ FLAC__StreamDecoderWriteStatus write_callback(const FLAC__StreamDecoder *decoder
 	DecoderSession *decoder_session = (DecoderSession*)client_data;
 	FILE *fout = decoder_session->fout;
 	const uint32_t bps = frame->header.bits_per_sample, channels = frame->header.channels;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	const FLAC__SampleType sample_type = frame->header.sample_type;
+#endif
 	const uint32_t shift = (bps%8)? 8-(bps%8): 0;
 	FLAC__bool is_big_endian = (
 		(decoder_session->format == FORMAT_AIFF || (decoder_session->format == FORMAT_AIFF_C && decoder_session->subformat == SUBFORMAT_AIFF_C_NONE)) ? true : (
@@ -1532,6 +1535,30 @@ FLAC__StreamDecoderWriteStatus write_callback(const FLAC__StreamDecoder *decoder
 		FLAC__ASSERT(!decoder_session->got_stream_info);
 		decoder_session->sample_rate = frame->header.sample_rate;
 	}
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	/* sanity-check the sample type */
+	if(decoder_session->sample_type != FLAC__SAMPLE_TYPE_NOT_SPECIFIED) {
+		if(sample_type != decoder_session->sample_type) {
+			FLAC__ASSERT(frame->header.number_type == FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER);
+			if(decoder_session->got_stream_info)
+				flac__utils_printf_clear_stats(stderr, 1, "%s: ERROR, sample type is %s in frame starting at sample %" PRIu64 " but %s in STREAMINFO\n", decoder_session->inbasefilename, FLAC__get_sample_type_string(sample_type), frame->header.number.sample_number, FLAC__get_sample_type_string(decoder_session->sample_type));
+			else
+				flac__utils_printf_clear_stats(stderr, 1, "%s: ERROR, sample type is %s in frame starting at sample %" PRIu64 " but %s in previous frames\n", decoder_session->inbasefilename, FLAC__get_sample_type_string(sample_type), frame->header.number.sample_number, FLAC__get_sample_type_string(decoder_session->sample_type));
+			if(!decoder_session->continue_through_decode_errors)
+				return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+			else if(decoder_session->replaygain.apply) {
+				flac__utils_printf(stderr, 1, "%s: ERROR, cannot decode through previous error with replaygain application turned on\n", decoder_session->inbasefilename);
+				return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+			}
+		}
+	}
+	else {
+		/* must not have gotten STREAMINFO, save the sample type from the frame header */
+		FLAC__ASSERT(!decoder_session->got_stream_info);
+		decoder_session->sample_type = sample_type;
+	}
+#endif
 
 	/*
 	 * limit the number of samples to accept based on --until
@@ -1877,6 +1904,10 @@ void metadata_callback(const FLAC__StreamDecoder *decoder, const FLAC__StreamMet
 			decoder_session->bps = metadata->data.stream_info.bits_per_sample;
 			decoder_session->channels = metadata->data.stream_info.channels;
 			decoder_session->sample_rate = metadata->data.stream_info.sample_rate;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+			if(decoder_session->sample_type == FLAC__SAMPLE_TYPE_NOT_SPECIFIED)
+				decoder_session->sample_type = FLAC__SAMPLE_TYPE_INT;
+#endif
 		}
 		if(decoder_session->stream_counter < 0) {
 			if(!flac__utils_canonicalize_skip_until_specification(decoder_session->skip_specification, decoder_session->sample_rate)) {

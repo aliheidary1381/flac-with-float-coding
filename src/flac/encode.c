@@ -62,7 +62,7 @@ typedef struct {
 	FLAC__bool is_unsigned_samples;
 	FLAC__bool is_big_endian;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	FLAC__bool sample_type;
+	FLAC__SampleType sample_type;
 	FLAC__float64 sample_rate_extension;
 #endif
 	FLAC__uint32 channel_mask;
@@ -873,7 +873,8 @@ static FLAC__bool get_sample_info_aiff(EncoderSession *e, encode_options_t optio
 
 	e->info.sample_rate = sample_rate;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	e->info.sample_rate_extension = sample_rate_extension;
+	if(e->info.sample_type == FLAC__SAMPLE_TYPE_FLOAT || channels > (1U << FLAC__STREAM_METADATA_STREAMINFO_CHANNELS_LEN) || channel_mask != 0 || bps > (1U << FLAC__STREAM_METADATA_STREAMINFO_BITS_PER_SAMPLE_LEN) || sample_rate_extension != (FLAC__float64)sample_rate || sample_rate > FLAC__MAX_SAMPLE_RATE)
+		e->info.sample_rate_extension = sample_rate_extension;
 #endif
 	e->info.channels = channels;
 	e->info.bits_per_sample = bps;
