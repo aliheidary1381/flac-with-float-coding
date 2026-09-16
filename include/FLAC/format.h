@@ -432,6 +432,15 @@ typedef enum {
 extern FLAC_API const char * const FLAC__FrameNumberTypeString[];
 
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+/** An enumeration of the frame header extension modes. */
+typedef enum {
+	FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT = 0, /**< Compact mode (8-bit payload) */
+	FLAC__FRAME_HEADER_EXTENSION_MODE_FULL = 1 /**< Full mode (128-bit payload) */
+} FLAC__FrameHeaderExtensionMode;
+#endif
+
+
 /** FLAC frame header structure.  (c.f. <A HREF="https://xiph.org/flac/format.html#frame_header">format specification</A>)
  */
 typedef struct {
@@ -467,6 +476,18 @@ typedef struct {
 	 * of the raw frame header bytes, meaning everything before the CRC byte
 	 * including the sync code.
 	 */
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	FLAC__bool has_extension;
+	/**< Whether the frame header extension is present. */
+	FLAC__FrameHeaderExtensionMode extension_mode;
+	/**< Extension mode: Compact or Full mode. */
+	FLAC__float64 sample_rate_extension;
+	/**< Sample rate in Hz (IEEE 754 float64). */
+	uint32_t channel_mask;
+	/**< WAVEFORMATEXTENSIBLE channel mask. */
+	FLAC__SampleType sample_type;
+	/**< The sample format enum (PCM integer or PCM float). */
+#endif
 } FLAC__FrameHeader;
 
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_SYNC; /**< == 0x3ffe; the frame header sync code */
@@ -479,6 +500,23 @@ extern FLAC_API const uint32_t FLAC__FRAME_HEADER_CHANNEL_ASSIGNMENT_LEN; /**< =
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_BITS_PER_SAMPLE_LEN; /**< == 3 (bits) */
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_ZERO_PAD_LEN; /**< == 1 (bit) */
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_CRC_LEN; /**< == 8 (bits) */
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_COMPACT_DECORRELATION_LEN; /**< == 3 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_COMPACT_RESERVED_LEN; /**< == 5 (bits) */
+#define FLAC__FRAME_HEADER_EXTENSION_COMPACT_LENGTH (1u)
+
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_SAMPLE_RATE_LEN; /**< == 64 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_CHANNELS_LEN; /**< == 8 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_CHANNEL_MASK_LEN; /**< == 32 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_SPECIAL_MASK_LEN; /**< == 3 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_IGNORE_MASK_LEN; /**< == 2 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_DECORRELATION_LEN; /**< == 3 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_BITS_PER_SAMPLE_LEN; /**< == 7 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_RESERVED_LEN; /**< == 5 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_SAMPLE_FORMAT_LEN; /**< == 4 (bits) */
+#define FLAC__FRAME_HEADER_EXTENSION_FULL_LENGTH (16u)
+#endif
 
 
 /** FLAC frame footer structure.  (c.f. <A HREF="https://xiph.org/flac/format.html#frame_footer">format specification</A>)

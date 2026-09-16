@@ -39,6 +39,7 @@
 #include <stdio.h>
 #include <stdlib.h> /* for malloc() */
 #include <string.h> /* for memset/memcpy() */
+#include <math.h> /* for rint() */
 #include <sys/types.h> /* for off_t */
 #include <sys/stat.h>  /* for stat() */
 #include "share/compat.h"
@@ -2734,6 +2735,13 @@ FLAC__bool read_frame_(FLAC__StreamDecoder *decoder, FLAC__bool *got_a_frame, FL
 		decoder->protected_->bits_per_sample = decoder->private_->frame.header.bits_per_sample;
 		decoder->protected_->sample_rate = decoder->private_->frame.header.sample_rate;
 		decoder->protected_->blocksize = decoder->private_->frame.header.blocksize;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		if(decoder->private_->frame.header.has_extension) {
+			decoder->protected_->sample_type = decoder->private_->frame.header.sample_type;
+			decoder->protected_->sample_rate_extension = decoder->private_->frame.header.sample_rate_extension;
+			decoder->protected_->channel_mask = decoder->private_->frame.header.channel_mask;
+		}
+#endif
 
 		FLAC__ASSERT(decoder->private_->frame.header.number_type == FLAC__FRAME_NUMBER_TYPE_SAMPLE_NUMBER);
 		decoder->private_->samples_decoded = decoder->private_->frame.header.number.sample_number + decoder->private_->frame.header.blocksize;
@@ -2756,7 +2764,11 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 	FLAC__uint32 x;
 	FLAC__uint64 xx;
 	uint32_t i, blocksize_hint = 0, sample_rate_hint = 0;
-	FLAC__byte crc8, raw_header[16]; /* MAGIC NUMBER based on the maximum frame header size, including CRC */
+	FLAC__byte crc8, raw_header[32]; /* MAGIC NUMBER based on the maximum frame header size (16 legacy + 16 extension), including CRC */
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	FLAC__bool has_extension = false;
+	FLAC__FrameHeaderExtensionMode extension_mode = FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT;
+#endif
 	uint32_t raw_header_len;
 	FLAC__bool is_unparseable = false;
 
@@ -2807,6 +2819,21 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 		raw_header[raw_header_len++] = (FLAC__byte)x;
 	}
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	// The primary indicator of an extended frame header: sample rate bits = 0b1111, channel bits = 0b1111, and bit depth bits = 0b011
+	if(((raw_header[2] & 0x0f) == 0x0f) && ((raw_header[3] >> 4) == 0x0f) && (((raw_header[3] & 0x0e) >> 1) == 0x03)) {
+		if(!decoder->private_->has_stream_info_extension) {
+			send_error_to_client_(decoder, FLAC__STREAM_DECODER_ERROR_STATUS_BAD_HEADER);
+			decoder->protected_->state = FLAC__STREAM_DECODER_SEARCH_FOR_FRAME_SYNC;
+			return true;
+		}
+		has_extension = true;
+		extension_mode = (raw_header[3] & 0x01) ? FLAC__FRAME_HEADER_EXTENSION_MODE_FULL : FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT;
+	}
+	decoder->private_->frame.header.has_extension = has_extension;
+	decoder->private_->frame.header.extension_mode = extension_mode;
+#endif
+
 	switch(x = raw_header[2] >> 4) {
 		case 0:
 			is_unparseable = true;
@@ -2839,6 +2866,12 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 			break;
 	}
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(has_extension) {
+		/* Sample rate will be set from extension */
+	}
+	else
+#endif
 	switch(x = raw_header[2] & 0x0f) {
 		case 0:
 			if(decoder->private_->has_stream_info)
@@ -2892,6 +2925,12 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 			FLAC__ASSERT(0);
 	}
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(has_extension) {
+		/* Channels and channel assignment will be set from extension */
+	}
+	else {
+#endif
 	x = (uint32_t)(raw_header[3] >> 4);
 	if(x & 8) {
 		decoder->private_->frame.header.channels = 2;
@@ -2915,13 +2954,20 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 		decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_INDEPENDENT;
 	}
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	}
+	if(has_extension) {
+		/* Bits per sample will be set from extension */
+	}
+	else
+#endif
 	switch(x = (uint32_t)(raw_header[3] & 0x0e) >> 1) {
 		case 0:
 			if(decoder->private_->has_stream_info) {
 				decoder->private_->frame.header.bits_per_sample = decoder->private_->stream_info.data.stream_info.bits_per_sample;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 				if(decoder->private_->frame.header.bits_per_sample == 1)
-					decoder->private_->frame.header.bits_per_sample = decoder->private_->stream_info.data.stream_info_extension.bits_per_sample;
+					decoder->private_->frame.header.bits_per_sample = decoder->private_->stream_info_extension.data.stream_info_extension.bits_per_sample;
 #endif
 			}
 			else
@@ -2955,8 +3001,13 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 
 #ifndef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
 	/* check to make sure that reserved bit is 0 */
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(!has_extension && (raw_header[3] & 0x01)) /* MAGIC NUMBER */
+		is_unparseable = true;
+#else
 	if(raw_header[3] & 0x01) /* MAGIC NUMBER */
 		is_unparseable = true;
+#endif
 #endif
 
 	/* read the frame's starting sample number (or frame number as the case may be) */
@@ -3031,6 +3082,116 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 		else
 			decoder->private_->frame.header.sample_rate = x*10;
 	}
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(has_extension) {
+		if(extension_mode == FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT) {
+			/* Compact Mode: 8 bits (1 byte) */
+			uint32_t decorr, reserved;
+			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
+				return false; /* read_callback_ sets the state for us */
+			raw_header[raw_header_len++] = (FLAC__byte)x;
+			decorr = x >> 5;
+			reserved = x & 0x1f;
+			if(reserved != 0)
+				is_unparseable = true;
+			if(decorr == 0)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_INDEPENDENT;
+			else if(decorr == 1)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_LEFT_SIDE;
+			else if(decorr == 2)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_RIGHT_SIDE;
+			else if(decorr == 3)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_MID_SIDE;
+			else
+				is_unparseable = true;
+
+			/* Inherit remaining parameters from STREAMINFO_EXTENSION */
+			decoder->private_->frame.header.sample_rate = (uint32_t)rint(decoder->private_->stream_info_extension.data.stream_info_extension.sample_rate);
+			decoder->private_->frame.header.sample_rate_extension = decoder->private_->stream_info_extension.data.stream_info_extension.sample_rate;
+			decoder->private_->frame.header.channels = decoder->private_->stream_info_extension.data.stream_info_extension.channels;
+			decoder->private_->frame.header.channel_mask = decoder->private_->stream_info_extension.data.stream_info_extension.channel_mask;
+			decoder->private_->frame.header.bits_per_sample = decoder->private_->stream_info_extension.data.stream_info_extension.bits_per_sample;
+			decoder->private_->frame.header.sample_type = decoder->private_->stream_info_extension.data.stream_info_extension.sample_type;
+		}
+		else {
+			/* Full Mode: 128 bits (16 bytes) */
+			FLAC__float64 sr_f64;
+			FLAC__uint32 mask;
+			uint32_t special_mask, ignore_mask, decorr, reserved, st;
+			union {
+				FLAC__float64 f;
+				FLAC__uint64 i;
+			} u_sr;
+
+			/* 1. 64-bit IEEE 754 float64 sample rate */
+			if(!FLAC__bitreader_read_raw_float64(decoder->private_->input, &sr_f64))
+				return false;
+			u_sr.f = sr_f64;
+			for(i = 0; i < 8; i++)
+				raw_header[raw_header_len++] = (FLAC__byte)(u_sr.i >> (56 - i * 8));
+			decoder->private_->frame.header.sample_rate_extension = sr_f64;
+			decoder->private_->frame.header.sample_rate = (uint32_t)rint(sr_f64);
+
+			/* 2. 8-bit (channels - 1) */
+			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
+				return false;
+			raw_header[raw_header_len++] = (FLAC__byte)x;
+			decoder->private_->frame.header.channels = x + 1;
+
+			/* 3. 32-bit channel mask */
+			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &mask, 32))
+				return false;
+			for(i = 0; i < 4; i++)
+				raw_header[raw_header_len++] = (FLAC__byte)(mask >> (24 - i * 8));
+			decoder->private_->frame.header.channel_mask = mask;
+
+			/* 4. 3 bits special mask + 2 bits ignore mask + 3 bits decorrelation ID */
+			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
+				return false;
+			raw_header[raw_header_len++] = (FLAC__byte)x;
+			special_mask = (x >> 5) & 0x07;
+			ignore_mask = (x >> 3) & 0x03;
+			decorr = x & 0x07;
+			if(special_mask != 0 || ignore_mask != 0)
+				is_unparseable = true;
+
+			if(decorr == 0)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_INDEPENDENT;
+			else if(decorr == 1)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_LEFT_SIDE;
+			else if(decorr == 2)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_RIGHT_SIDE;
+			else if(decorr == 3)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_MID_SIDE;
+			else
+				is_unparseable = true;
+
+			/* 5. 7-bit (bits_per_sample - 1) + 1-bit reserved MSB */
+			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
+				return false;
+			raw_header[raw_header_len++] = (FLAC__byte)x;
+			decoder->private_->frame.header.bits_per_sample = ((x >> 1) & 0x7f) + 1;
+			reserved = (x & 0x01) << 4;
+
+			/* 6. 4-bit reserved LSB + 4-bit sample format */
+			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
+				return false;
+			raw_header[raw_header_len++] = (FLAC__byte)x;
+			reserved |= (x >> 4) & 0x0f;
+			if(reserved != 0)
+				is_unparseable = true;
+
+			st = x & 0x0f;
+			if(st == 0)
+				decoder->private_->frame.header.sample_type = FLAC__SAMPLE_TYPE_INT;
+			else if(st == 1)
+				decoder->private_->frame.header.sample_type = FLAC__SAMPLE_TYPE_FLOAT;
+			else
+				is_unparseable = true;
+		}
+	}
+#endif
 
 	/* read the CRC-8 byte */
 	if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))

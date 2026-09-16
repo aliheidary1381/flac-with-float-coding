@@ -3892,6 +3892,13 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 	frame_header.bits_per_sample = encoder->protected_->bits_per_sample;
 	frame_header.number_type = FLAC__FRAME_NUMBER_TYPE_FRAME_NUMBER;
 	frame_header.number.frame_number = threadtask->current_frame_number;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	frame_header.has_extension = (encoder->private_->streaminfo.data.stream_info.bits_per_sample == 1);
+	frame_header.extension_mode = FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT;
+	frame_header.sample_rate_extension = encoder->protected_->sample_rate_extension;
+	frame_header.channel_mask = encoder->protected_->channel_mask;
+	frame_header.sample_type = encoder->protected_->sample_type;
+#endif
 
 	/*
 	 * Figure out what channel assignments to try

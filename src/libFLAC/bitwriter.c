@@ -393,6 +393,18 @@ FLAC__bool FLAC__bitwriter_write_raw_int64(FLAC__BitWriter *bw, FLAC__int64 val,
 	return FLAC__bitwriter_write_raw_uint64(bw, uval, bits);
 }
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+FLAC__bool FLAC__bitwriter_write_raw_float64(FLAC__BitWriter *bw, FLAC__float64 val)
+{
+	union {
+		FLAC__float64 f;
+		FLAC__uint64 i;
+	} u;
+	u.f = val;
+	return FLAC__bitwriter_write_raw_uint64(bw, u.i, 64);
+}
+#endif
+
 FLAC__bool FLAC__bitwriter_write_raw_uint32_little_endian(FLAC__BitWriter *bw, FLAC__uint32 val)
 {
 	/* this doesn't need to be that fast as currently it is only used for vorbis comments */
@@ -940,3 +952,4 @@ FLAC__bool FLAC__bitwriter_zero_pad_to_byte_boundary(FLAC__BitWriter *bw)
 	else
 		return true;
 }
+

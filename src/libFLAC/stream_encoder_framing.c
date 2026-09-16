@@ -111,10 +111,8 @@ FLAC__bool FLAC__add_metadata_block(const FLAC__StreamMetadata *metadata, FLAC__
 			break;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 		case FLAC__METADATA_TYPE_STREAMINFO_EXTENSION:
-			uint64_t sample_rate_cast;
-			memcpy(&sample_rate_cast, &metadata->data.stream_info_extension.sample_rate, sizeof(FLAC__float64));
 			FLAC__ASSERT(FLAC__format_sample_rate_is_valid_extension(metadata->data.stream_info_extension.sample_rate));
-			if(!FLAC__bitwriter_write_raw_uint64(bw, sample_rate_cast, FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_SAMPLE_RATE_LEN))
+			if(!FLAC__bitwriter_write_raw_float64(bw, metadata->data.stream_info_extension.sample_rate))
 				return false;
 			if(!FLAC__bitwriter_write_raw_uint32(bw, metadata->data.stream_info_extension.channels - 1, FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_CHANNELS_LEN))
 				return false;
@@ -310,6 +308,21 @@ FLAC__bool FLAC__frame_add_header(const FLAC__FrameHeader *header, FLAC__BitWrit
 	if(!FLAC__bitwriter_write_raw_uint32(bw, u, FLAC__FRAME_HEADER_BLOCK_SIZE_LEN))
 		return false;
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(header->has_extension) {
+		sample_rate_hint = 0;
+		/* Sample rate = 0b1111 (15), Channel assignment = 0b1111 (15), BPS = 0b011 (3), Zero pad = extension mode */
+		if(!FLAC__bitwriter_write_raw_uint32(bw, 15, FLAC__FRAME_HEADER_SAMPLE_RATE_LEN))
+			return false;
+		if(!FLAC__bitwriter_write_raw_uint32(bw, 15, FLAC__FRAME_HEADER_CHANNEL_ASSIGNMENT_LEN))
+			return false;
+		if(!FLAC__bitwriter_write_raw_uint32(bw, 3, FLAC__FRAME_HEADER_BITS_PER_SAMPLE_LEN))
+			return false;
+		if(!FLAC__bitwriter_write_raw_uint32(bw, header->extension_mode & 1, FLAC__FRAME_HEADER_ZERO_PAD_LEN))
+			return false;
+	}
+	else {
+#endif
 	FLAC__ASSERT(FLAC__format_sample_rate_is_valid(header->sample_rate));
 	sample_rate_hint = 0;
 	switch(header->sample_rate) {
@@ -381,6 +394,9 @@ FLAC__bool FLAC__frame_add_header(const FLAC__FrameHeader *header, FLAC__BitWrit
 
 	if(!FLAC__bitwriter_write_raw_uint32(bw, 0, FLAC__FRAME_HEADER_ZERO_PAD_LEN))
 		return false;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	}
+#endif
 
 	if(header->number_type == FLAC__FRAME_NUMBER_TYPE_FRAME_NUMBER) {
 		if(!FLAC__bitwriter_write_utf8_uint32(bw, header->number.frame_number))
@@ -409,6 +425,41 @@ FLAC__bool FLAC__frame_add_header(const FLAC__FrameHeader *header, FLAC__BitWrit
 				return false;
 			break;
 	}
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(header->has_extension) {
+		if(header->extension_mode == FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT) {
+			/* Compact Mode: 8 bits (3 bits decorrelation ID + 5 bits reserved 0) */
+			uint32_t decorr = (uint32_t)header->channel_assignment & 0x07;
+			if(!FLAC__bitwriter_write_raw_uint32(bw, decorr << 5, 8))
+				return false;
+		} else {
+			/* Full Mode: 128 bits */
+			FLAC__float64 sr = FLAC__format_sample_rate_is_valid_extension(header->sample_rate_extension) ? header->sample_rate_extension : (FLAC__float64)header->sample_rate;
+			uint32_t decorr = (uint32_t)header->channel_assignment & 0x07;
+			uint32_t sample_format = (uint32_t)header->sample_type & 0x0f;
+
+			/* 1. 64-bit IEEE 754 float64 sample rate */
+			if(!FLAC__bitwriter_write_raw_float64(bw, sr))
+				return false;
+			/* 2. 8-bit (channels - 1) */
+			if(!FLAC__bitwriter_write_raw_uint32(bw, header->channels - 1, 8))
+				return false;
+			/* 3. 32-bit channel mask */
+			if(!FLAC__bitwriter_write_raw_uint32(bw, header->channel_mask, 32))
+				return false;
+			/* 4. 3 bits special mask (0) + 5. 2 bits ignore mask (0) + 6. 3 bits decorrelation ID */
+			if(!FLAC__bitwriter_write_raw_uint32(bw, decorr, 8))
+				return false;
+			/* 7. 7-bit (bits_per_sample - 1) + 8. 1 bit MSB of 5-bit reserved (0) */
+			if(!FLAC__bitwriter_write_raw_uint32(bw, (header->bits_per_sample - 1) << 1, 8))
+				return false;
+			/* 8. 4 bits remaining reserved (0) + 9. 4-bit sample format */
+			if(!FLAC__bitwriter_write_raw_uint32(bw, sample_format, 8))
+				return false;
+		}
+	}
+#endif
 
 	/* write the CRC */
 	if(!FLAC__bitwriter_get_write_crc8(bw, &crc))

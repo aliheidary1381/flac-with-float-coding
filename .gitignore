@@ -103,3 +103,4 @@ _deps
 
 /.vs*/
 /.cache
+/.direnv
