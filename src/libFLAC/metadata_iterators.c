@@ -2178,7 +2178,7 @@ FLAC_API FLAC__bool FLAC__metadata_iterator_delete_block(FLAC__Metadata_Iterator
 	}
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	if(iterator->current->data->type == FLAC__METADATA_TYPE_STREAMINFO_EXTENSION && iterator->current->prev->data->type != FLAC__METADATA_TYPE_STREAMINFO && iterator->current->prev->data->data.stream_info.bits_per_sample == 1) {
+	if(iterator->current->data->type == FLAC__METADATA_TYPE_STREAMINFO_EXTENSION && iterator->current->prev->data->type == FLAC__METADATA_TYPE_STREAMINFO && iterator->current->prev->data->data.stream_info.bits_per_sample == 1) {
 		return false;
 	}
 #endif

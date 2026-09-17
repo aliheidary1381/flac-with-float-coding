@@ -1130,9 +1130,19 @@ static FLAC__StreamEncoderInitStatus init_stream_internal_(
 
 #if FLAC__HAS_OGG
 	encoder->private_->is_ogg = is_ogg;
-	if(is_ogg && !FLAC__ogg_encoder_aspect_init(&encoder->protected_->ogg_encoder_aspect)) {
-		encoder->protected_->state = FLAC__STREAM_ENCODER_OGG_ERROR;
-		return FLAC__STREAM_ENCODER_INIT_STATUS_ENCODER_ERROR;
+	if(is_ogg) {
+		uint32_t num_metadata = encoder->protected_->num_metadata_blocks;
+		if(!metadata_has_vorbis_comment)
+			num_metadata++;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT || FLAC__format_sample_rate_is_valid_extension(encoder->protected_->sample_rate_extension) || encoder->protected_->channels > 8 || encoder->protected_->channel_mask != 0 || encoder->protected_->bits_per_sample > 32)
+			num_metadata++;
+#endif
+		if(!FLAC__ogg_encoder_aspect_init(&encoder->protected_->ogg_encoder_aspect) ||
+		   !FLAC__ogg_encoder_aspect_set_num_metadata(&encoder->protected_->ogg_encoder_aspect, num_metadata)) {
+			encoder->protected_->state = FLAC__STREAM_ENCODER_OGG_ERROR;
+			return FLAC__STREAM_ENCODER_INIT_STATUS_ENCODER_ERROR;
+		}
 	}
 #endif
 
