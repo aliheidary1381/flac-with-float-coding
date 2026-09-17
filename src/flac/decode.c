@@ -125,7 +125,7 @@ static FLAC__bool DecoderSession_process(DecoderSession *d);
 static FLAC__bool verify_streaminfo(DecoderSession *d, FLAC__bool md5_failure);
 static int DecoderSession_finish_ok(DecoderSession *d);
 static int DecoderSession_finish_error(DecoderSession *d);
-static FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, uint32_t sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input);
+static FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, FLAC__float64 sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input);
 static FLAC__bool write_iff_headers(FILE *f, DecoderSession *decoder_session, FLAC__uint64 samples);
 static FLAC__uint64 calculate_total_riff_wave_fmt_chunk_size(FileFormat format, FLAC__bool is_waveformatextensible, FLAC__bool preserve_dummy_cbsize);
 static FLAC__uint64 calculate_riff_wave_fmt_chunk_size_field(FLAC__bool is_waveformatextensible, FLAC__bool preserve_dummy_cbsize);
@@ -721,7 +721,7 @@ int DecoderSession_finish_error(DecoderSession *d)
 	return 1;
 }
 
-FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, uint32_t sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input)
+FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, FLAC__float64 sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input)
 {
 	/* convert from mm:ss.sss to sample number if necessary */
 	if(!flac__utils_canonicalize_skip_until_specification(spec, sample_rate)) {
@@ -815,6 +815,16 @@ FLAC__bool write_iff_headers(FILE *f, DecoderSession *decoder_session, FLAC__uin
 		format == FORMAT_AIFF ||
 		format == FORMAT_AIFF_C
 	);
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if((format == FORMAT_WAVE || format == FORMAT_WAVE64 || format == FORMAT_RF64) &&
+	   decoder_session->sample_rate_extension > 0.0 &&
+	   floor(decoder_session->sample_rate_extension) != decoder_session->sample_rate_extension) {
+		flac__utils_printf(stderr, 1, "%s: WARNING: sample rate (%f) has a fractional component which cannot be accurately represented in WAV header (truncated to %u Hz)\n", decoder_session->inbasefilename, decoder_session->sample_rate_extension, decoder_session->sample_rate);
+		if(decoder_session->treat_warnings_as_errors)
+			return false;
+	}
+#endif
 
 	if(samples == 0) {
 		if(f == stdout) {
@@ -1910,7 +1920,12 @@ void metadata_callback(const FLAC__StreamDecoder *decoder, const FLAC__StreamMet
 #endif
 		}
 		if(decoder_session->stream_counter < 0) {
-			if(!flac__utils_canonicalize_skip_until_specification(decoder_session->skip_specification, decoder_session->sample_rate)) {
+			const FLAC__float64 effective_sr =
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+				(decoder_session->got_stream_info_extension && decoder_session->sample_rate_extension > 0.0) ? decoder_session->sample_rate_extension :
+#endif
+				(FLAC__float64)decoder_session->sample_rate;
+			if(!flac__utils_canonicalize_skip_until_specification(decoder_session->skip_specification, effective_sr)) {
 				flac__utils_printf(stderr, 1, "%s: ERROR, value of --skip is too large\n", decoder_session->inbasefilename);
 				decoder_session->abort_flag = true;
 				return;

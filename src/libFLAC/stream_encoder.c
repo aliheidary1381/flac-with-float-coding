@@ -1406,7 +1406,7 @@ static FLAC__StreamEncoderInitStatus init_stream_internal_(
 	    encoder->private_->streaminfo_extension.is_last = false;
 	    encoder->private_->streaminfo_extension.length = FLAC__STREAM_METADATA_STREAMINFO_EXTENSION_LENGTH;
 	    encoder->private_->streaminfo_extension.data.stream_info_extension.sample_type = encoder->protected_->sample_type;
-	    encoder->private_->streaminfo_extension.data.stream_info_extension.sample_rate = encoder->protected_->sample_rate_extension;
+	    encoder->private_->streaminfo_extension.data.stream_info_extension.sample_rate = FLAC__format_sample_rate_is_valid_extension(encoder->protected_->sample_rate_extension) ? encoder->protected_->sample_rate_extension : (FLAC__float64)encoder->protected_->sample_rate;
 	    encoder->private_->streaminfo_extension.data.stream_info_extension.bits_per_sample = encoder->protected_->bits_per_sample;
 	    encoder->private_->streaminfo_extension.data.stream_info_extension.channels = encoder->protected_->channels;
 	    encoder->private_->streaminfo_extension.data.stream_info_extension.channel_mask = encoder->protected_->channel_mask;

@@ -157,7 +157,7 @@ static FLAC__bool EncoderSession_init_encoder(EncoderSession *e, encode_options_
 static FLAC__bool EncoderSession_process(EncoderSession *e, const FLAC__int32 * const buffer[], uint32_t samples);
 static FLAC__bool EncoderSession_format_is_iff(const EncoderSession *e);
 static FLAC__bool convert_to_seek_table_template(const char *requested_seek_points, int num_requested_seek_points, FLAC__StreamMetadata *cuesheet, EncoderSession *e);
-static FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, uint32_t sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input);
+static FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, FLAC__float64 sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input);
 static FLAC__bool verify_metadata(const EncoderSession *e, FLAC__StreamMetadata **metadata, uint32_t num_metadata);
 static FLAC__bool format_input(FLAC__int32 *dest[], uint32_t wide_samples, FLAC__bool is_big_endian, FLAC__bool is_unsigned_samples, uint32_t channels, uint32_t bps, uint32_t shift, size_t *channel_map);
 static void encoder_progress_callback(const FLAC__StreamEncoder *encoder, FLAC__uint64 bytes_written, FLAC__uint64 samples_written, uint32_t frames_written, uint32_t total_frames_estimate, void *client_data);
@@ -1050,6 +1050,7 @@ int flac__encode_file(FILE *infile, FLAC__off_t infilesize, const char *infilena
 		FLAC__uint64 skip;
 		FLAC__uint64 until; /* a value of 0 mean end-of-stream (i.e. --until=-0) */
 		uint32_t consecutive_eos_count = 0;
+		const FLAC__float64 effective_sr = FLAC__format_sample_rate_is_valid_extension(encoder_session.info.sample_rate_extension) ? encoder_session.info.sample_rate_extension : (FLAC__float64)encoder_session.info.sample_rate;
 
 		switch(options.format) {
 			case FORMAT_RAW:
@@ -1104,7 +1105,7 @@ int flac__encode_file(FILE *infile, FLAC__off_t infilesize, const char *infilena
 		 * now that we know the sample rate, canonicalize the
 		 * --skip string to an absolute sample number:
 		 */
-		if(!flac__utils_canonicalize_skip_until_specification(&options.skip_specification, encoder_session.info.sample_rate)) {
+		if(!flac__utils_canonicalize_skip_until_specification(&options.skip_specification, effective_sr)) {
 			flac__utils_printf(stderr, 1, "%s: ERROR: value of --skip is too large\n", encoder_session.inbasefilename, encoder_session.info.bits_per_sample-encoder_session.info.shift);
 			return EncoderSession_finish_error(&encoder_session);
 		}
@@ -1115,7 +1116,7 @@ int flac__encode_file(FILE *infile, FLAC__off_t infilesize, const char *infilena
 		 * now that we possibly know the input size, canonicalize the
 		 * --until string to an absolute sample number:
 		 */
-		if(!canonicalize_until_specification(&options.until_specification, encoder_session.inbasefilename, encoder_session.info.sample_rate, skip, total_samples_in_input))
+		if(!canonicalize_until_specification(&options.until_specification, encoder_session.inbasefilename, effective_sr, skip, total_samples_in_input))
 			return EncoderSession_finish_error(&encoder_session);
 		until = (FLAC__uint64)options.until_specification.value.samples;
 
@@ -2362,7 +2363,7 @@ FLAC__bool convert_to_seek_table_template(const char *requested_seek_points, int
 	return true;
 }
 
-FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, uint32_t sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input)
+FLAC__bool canonicalize_until_specification(utils__SkipUntilSpecification *spec, const char *inbasefilename, FLAC__float64 sample_rate, FLAC__uint64 skip, FLAC__uint64 total_samples_in_input)
 {
 	/* convert from mm:ss.sss to sample number if necessary */
 	if(!flac__utils_canonicalize_skip_until_specification(spec, sample_rate)) {

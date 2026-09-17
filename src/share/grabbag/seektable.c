@@ -1,3 +1,4 @@
+#include <math.h>
 /* grabbag - Convenience lib for various routines common to several tools
  * Copyright (C) 2002-2009  Josh Coalson
  * Copyright (C) 2011-2025  Xiph.Org Foundation
@@ -68,9 +69,9 @@ FLAC__bool grabbag__seektable_convert_specification_to_template(const char *spec
 					if(!only_explicit_placeholders) {
 						const double sec = atof(pt);
 						if(sec > 0.0) {
-							uint32_t samples = (uint32_t)(sec * sample_rate);
-							/* Restrict seekpoints to two per second of audio. */
-							samples = samples < sample_rate / 2 ? sample_rate / 2 : samples;
+							const double calc_samples = rint(sec * sample_rate);
+							const double min_samples = rint(sample_rate / 2.0);
+							uint32_t samples = calc_samples < (min_samples < 1.0 ? 1.0 : min_samples) ? (uint32_t)(min_samples < 1.0 ? 1.0 : min_samples) : (uint32_t)calc_samples;
 							if(samples > 0) {
 								/* +1 for the initial point at sample 0 */
 								if(!FLAC__metadata_object_seektable_template_append_spaced_points_by_samples(seektable_template, samples, total_samples_to_encode))

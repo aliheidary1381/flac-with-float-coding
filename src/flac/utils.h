@@ -68,7 +68,7 @@ void flac__utils_printf_clear_stats(FILE *stream, int level, const char *format,
 
 FLAC__bool flac__utils_check_empty_skip_until_specification(utils__SkipUntilSpecification *spec);
 FLAC__bool flac__utils_parse_skip_until_specification(const char *s, utils__SkipUntilSpecification *spec);
-FLAC__bool flac__utils_canonicalize_skip_until_specification(utils__SkipUntilSpecification *spec, uint32_t sample_rate);
+FLAC__bool flac__utils_canonicalize_skip_until_specification(utils__SkipUntilSpecification *spec, FLAC__float64 sample_rate);
 
 FLAC__bool flac__utils_parse_cue_specification(const char *s, utils__CueSpecification *spec);
 void flac__utils_canonicalize_cue_specification(const utils__CueSpecification *cue_spec, const FLAC__StreamMetadata_CueSheet *cuesheet, FLAC__uint64 total_samples, utils__SkipUntilSpecification *skip_spec, utils__SkipUntilSpecification *until_spec);
