@@ -44,6 +44,7 @@ typedef struct {
 
 void FLAC__MD5Init(FLAC__MD5Context *context);
 void FLAC__MD5Final(FLAC__byte digest[16], FLAC__MD5Context *context);
+void FLAC__MD5Update(FLAC__MD5Context *context, const FLAC__byte *data, uint32_t len);
 
 FLAC__bool FLAC__MD5Accumulate(FLAC__MD5Context *ctx, const FLAC__int32 * const signal[], uint32_t channels, uint32_t samples, uint32_t bytes_per_sample);
 

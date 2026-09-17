@@ -1,5 +1,5 @@
 /* libFLAC - Free Lossless Audio Codec library
- * Copyright (C) 2025 Xiph.Org Foundation
+ * Copyright (C) 2025-2026 Xiph.Org Foundation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -29,10 +29,16 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef FLAC__PRIVATE__TRANSFORM_FLOAT_H
+#define FLAC__PRIVATE__TRANSFORM_FLOAT_H
+
+#include <stddef.h>
 #include "FLAC/assert.h"
 #include "FLAC/ordinals.h"
+#include "private/md5.h"
 
-uint32_t FLAC__do_float_bit_manipulation(uint32_t x);
-uint32_t FLAC__undo_float_bit_manipulation(uint32_t x);
-void FLAC__transform_f32_buffer_to_i32_signal(uint32_t *dest, const uint32_t *src, size_t n);
-void FLAC__transform_i32_signal_to_f32_buffer(uint32_t *buffer, size_t n);
+void FLAC__split_f32_buffer_to_subframe_signals(FLAC__int32 *exp_signal, FLAC__int32 *sign_mant_signal, const uint32_t *src, size_t n);
+void FLAC__combine_subframe_signals_to_f32_buffer(uint32_t *dest, const FLAC__int32 *exp_signal, const FLAC__int32 *sign_mant_signal, size_t n);
+FLAC__bool FLAC__MD5Accumulate_float_split(FLAC__MD5Context *ctx, const FLAC__int32 * const signals[], uint32_t channels, uint32_t samples);
+
+#endif

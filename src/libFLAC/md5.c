@@ -181,7 +181,7 @@ static void byteSwapX16(FLAC__uint32 *buf)
  * Update context to reflect the concatenation of another buffer full
  * of bytes.
  */
-static void FLAC__MD5Update(FLAC__MD5Context *ctx, FLAC__byte const *buf, uint32_t len)
+void FLAC__MD5Update(FLAC__MD5Context *ctx, FLAC__byte const *buf, uint32_t len)
 {
 	FLAC__uint32 t;
 

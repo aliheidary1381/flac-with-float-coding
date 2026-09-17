@@ -109,8 +109,10 @@ extern "C" {
 /** The maximum number of channels permitted by the format. */
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 #define FLAC__MAX_CHANNELS (256u)
+#define FLAC__MAX_SUBFRAMES (512u)
 #else
 #define FLAC__MAX_CHANNELS (8u)
+#define FLAC__MAX_SUBFRAMES (8u)
 #endif
 
 /** The minimum sample resolution permitted by the format. */
@@ -454,7 +456,7 @@ typedef struct {
 	/**< The sample rate in Hz. */
 
 	uint32_t channels;
-	/**< The number of channels (== number of subframes). */
+	/**< The number of channels. */
 
 	FLAC__ChannelAssignment channel_assignment;
 	/**< The channel assignment for the frame. */
@@ -539,7 +541,7 @@ extern FLAC_API const uint32_t FLAC__FRAME_FOOTER_CRC_LEN; /**< == 16 (bits) */
  */
 typedef struct {
 	FLAC__FrameHeader header;
-	FLAC__Subframe subframes[FLAC__MAX_CHANNELS];
+	FLAC__Subframe subframes[FLAC__MAX_SUBFRAMES];
 	FLAC__FrameFooter footer;
 } FLAC__Frame;
 
@@ -1068,7 +1070,7 @@ FLAC_API FLAC__bool FLAC__format_vorbiscomment_entry_value_is_legal(const FLAC__
  * \param entry      An entry to be checked.
  * \param length     The length of \a entry in bytes.
  * \assert
- *    \code value != NULL \endcode
+ *    \code entry != NULL \endcode
  * \retval FLAC__bool
  *    \c false if entry name is illegal, else \c true.
  */

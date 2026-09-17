@@ -1,5 +1,5 @@
 /* libFLAC - Free Lossless Audio Codec library
- * Copyright (C) 2025 Xiph.Org Foundation
+ * Copyright (C) 2025-2026 Xiph.Org Foundation
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -56,162 +56,100 @@ Possible design choices are listed below. The further we go, the higher the leve
    1. just leaving the floats as ints
 		probably would lead to saving most of them in verbatim frames with no compression
 		my tests resulted in an ~80% ratio
-   2. doing some basic bit manipulation (current approach)
+   2. doing some basic bit manipulation
 		saves ~3 bits theoretically
-		my tests resulted in about ~70% ratio when the stream is a direct conversion from int samples to 32-bit floats.
-   3. splitting the "exponent" (8 bit) and "sign+significand" (24 bit) parts of floats into two channels,
-	subtracting an (automatically recognised) DC offset from the "exponents" channel
-	and	storing the offset in each frame header (i.e. unsigned to signed conversion)
-		could be better (haven't tried it yet. hard for me to implement).
+		my tests resulted in about ~70% ratio
+   3. splitting the "exponent" (8 bit) and "sign+significand" (24 bit) parts of floats into two subframes
+		(current approach). my tests resulted in about ~68% ratio, even with no bit manipulation
+   4. splitting + subtracting an (automatically recognised) DC offset from the "exponents" channel
+		and	storing the offset in each frame header (i.e. unsigned to signed conversion), and using that to
+		shift the "significand" channel. could be better (next milestone).
 		my guess would be a *consistent* ~60% ratio, at least.
 */
 
+#ifdef HAVE_CONFIG_H
+#  include <config.h>
+#endif
+
 #include <stddef.h>
+#include <stdint.h>
 #include "private/transform_float.h"
+#include "private/md5.h"
+#include "share/alloc.h"
 
 /*
-#include <stddef.h>
-
-float FLAC__transform_i32_to_f32(uint32_t in)
+ * Splits 32-bit IEEE 754 floating-point samples into two integer subframe signals:
+ *  - Exponent (8 bits, signed int8_t: bits 23-30 of the float)
+ *  - Sign + Significand (24 bits: sign at bit 23, significand fraction at bits 0-22, sign-extended to 32 bits)
+ */
+void FLAC__split_f32_buffer_to_subframe_signals(FLAC__int32 *exp_signal, FLAC__int32 *sign_mant_signal, const uint32_t *src, size_t n)
 {
-	// simply doing "return in;", the compiler would instruct the CPU to convert the int
-	// like below. this is just a reminder-note on how f32 is represented (IEEE 754 standard).
-	union {
-		float    f;
-		int32_t i;
-	} conv = { .i = in }; // evil floating point bit level hacking
-
-	FLAC__bool sign = conv.i < 0;
-	int32_t exponent; // 8 bits
-	int32_t significand; // 23 bits stored in float & 1 implicit leading bit. total = 24 bits
-	int32_t val;
-
-	sign = conv.i < 0; // (conv.i & 0b10000000000000000000000000000000) != 0
-	int32_t exponent_bits = (conv.i & 0b01111111100000000000000000000000) >> 23;
-	int32_t significand_bits = conv.i & 0b00000000011111111111111111111111;
-
-	switch (exponent_bits) {
-		case 0b11111111:
-			if (significand_bits != 0) {
-				// NaN
-			}
-			else {
-				// infinity
-			}
-			break;
-		case 0b00000000:
-			if (significand_bits != 0) {
-				// subnormal number
-			}
-			else {
-				exponent = 0;
-				significand = 0;
-				// zero
-			}
-			break;
-		default:
-			significand = significand_bits | 0b00000000100000000000000000000000; // implicit leading bit
-			exponent = exponent_bits - 127 - 23;
-			// 127 for biased form.
-			// 23 of the exponent is already applied to the significand,
-			// because it was supposed to be the fraction part.
-			if (exponent < -24) {
-				// too small
-			}
-			else if (exponent < 0 && ((0b11111111111111111111111111111111 >> (32 + exponent)) & significand) != 0) {
-				// too small
-			}
-			else if (exponent >= 7) {
-				// too large
-			}
-			else { // exponent is in [-23, 6]
-				if (exponent < 0) {
-					val = significand >> (-exponent);
-				}
-				else {
-					val = significand << exponent;
-				}
-				if (sign) {
-					val = -val;
-				}
-			}
+	size_t i;
+	for (i = 0; i < n; i++) {
+		const uint32_t x = src[i];
+		const uint32_t exp = (x >> 23) & 0xFF;
+		const uint32_t sign = (x >> 31) & 1;
+		const uint32_t mant = x & 0x7FFFFF;
+		const uint32_t sign_mant = (sign << 23) | mant;
+		exp_signal[i] = (FLAC__int32)(int8_t)exp;
+		sign_mant_signal[i] = (FLAC__int32)(sign_mant << 8) >> 8;
 	}
 }
 
-uint32_t reverse_bits(uint32_t x);
-
-uint32_t reverse_bits(uint32_t x)
+/*
+ * Recombines two integer subframe signals (8-bit exponent and 24-bit sign+significand)
+ * into standard 32-bit IEEE 754 floating-point raw words.
+ */
+void FLAC__combine_subframe_signals_to_f32_buffer(uint32_t *dest, const FLAC__int32 *exp_signal, const FLAC__int32 *sign_mant_signal, size_t n)
 {
-    uint32_t result = 0;
-    for (int i = 0; i < 32; ++i) {
-        result <<= 1;
-        result |= (x & 1);
-        x >>= 1;
-    }
-    return result;
+	size_t i;
+	for (i = 0; i < n; i++) {
+		const uint32_t exp = (uint32_t)exp_signal[i] & 0xFF;
+		const uint32_t sign_mant = (uint32_t)sign_mant_signal[i] & 0xFFFFFF;
+		const uint32_t sign = (sign_mant >> 23) & 1;
+		const uint32_t mant = sign_mant & 0x7FFFFF;
+		dest[i] = (sign << 31) | (exp << 23) | mant;
+	}
 }
 
-#if defined(__has_builtin) && __has_builtin(__builtin_bitreverse32)
-    #define bitreverse(x) __builtin_bitreverse32(x)
-#else
-    #define bitreverse(x) reverse_bits(x)
-#endif
-
-// Assumes x = x & 0b00000000011111111111111111111111;
-uint32_t cyclic_shift_significand(uint32_t x, uint32_t s);
-
-uint32_t cyclic_shift_significand(uint32_t x, uint32_t s)
+/*
+ * Accumulates MD5 checksum over the combined/split integer subframe signals:
+ * 4 bytes per sample per channel:
+ *   [Byte 0: 8-bit exponent, Byte 1..3: 24-bit sign+significand (little-endian)]
+ */
+FLAC__bool FLAC__MD5Accumulate_float_split(FLAC__MD5Context *ctx, const FLAC__int32 * const signals[], uint32_t channels, uint32_t samples)
 {
-    return ((x >> s) | (x << (23 - s))) & 0b00000000011111111111111111111111;
-}
+	const size_t bytes_needed = (size_t)channels * (size_t)samples * 4;
+	uint32_t sample, channel;
+	FLAC__byte *buf;
 
-inline uint32_t FLAC__do_float_bit_manipulation(uint32_t x)
-{
-	uint32_t sign = (x & 0b10000000000000000000000000000000) >> 31;
-	uint32_t exponent = (x & 0b01111111100000000000000000000000) >> 23;
-	uint32_t significand = x & 0b00000000011111111111111111111111;
-	uint32_t high_exponent, low_exponent, ret;
-	exponent = (exponent + 152)%256;
-	high_exponent = exponent >> 5;
-	low_exponent = exponent & 0b11111;
-	significand = cyclic_shift_significand(significand, (23*12 - exponent)%23);
-	ret = (high_exponent << 28) | (significand << 5) | low_exponent;
-	if (sign)
-		ret = -ret;
-	return ret;
-}
-*/
+	if (channels > 1024)
+		return false;
+	if ((size_t)channels * 4 > SIZE_MAX / (size_t)samples)
+		return false;
 
-inline uint32_t FLAC__do_float_bit_manipulation(uint32_t x)
-{
-	uint32_t sign = (x & 0b10000000000000000000000000000000) >> 31;
-	uint32_t exponent = (x & 0b01111111100000000000000000000000) >> 23;
-	uint32_t significand = x & 0b00000000011111111111111111111111;
-	exponent = 255 - exponent; // offset-binary to 2's complement (but positive/negative are switched)
-	if (exponent & 0b10000000) // negative
-		significand = (0b00000000100000000000000000000000 - significand) & 0b00000000011111111111111111111111;
-	return (exponent << 24) | (sign << 23) | significand;
-}
+	if (ctx->capacity < bytes_needed) {
+		if (0 == (ctx->internal_buf.p8 = safe_realloc_(ctx->internal_buf.p8, bytes_needed))) {
+			if (0 == (ctx->internal_buf.p8 = safe_malloc_(bytes_needed))) {
+				ctx->capacity = 0;
+				return false;
+			}
+		}
+		ctx->capacity = bytes_needed;
+	}
 
-inline uint32_t FLAC__undo_float_bit_manipulation(uint32_t x)
-{
-	uint32_t sign = (x & 0b00000000100000000000000000000000) >> 23;
-	uint32_t exponent = (x & 0b11111111000000000000000000000000) >> 24;
-	uint32_t significand = x & 0b00000000011111111111111111111111;
-	if (exponent & 0b10000000) // negative
-		significand = (0b00000000100000000000000000000000 - significand) & 0b00000000011111111111111111111111;
-	exponent = 255 - exponent; // 2's complement back to offset-binary (with correct positive/negatives)
-	return (sign << 31) | (exponent << 23) | significand;
-}
+	buf = ctx->internal_buf.p8;
+	for (sample = 0; sample < samples; sample++) {
+		for (channel = 0; channel < channels; channel++) {
+			const FLAC__int32 exp = signals[2 * channel][sample];
+			const FLAC__int32 sign_mant = signals[2 * channel + 1][sample];
+			*buf++ = (FLAC__byte)(exp & 0xFF);
+			*buf++ = (FLAC__byte)(sign_mant & 0xFF);
+			*buf++ = (FLAC__byte)((sign_mant >> 8) & 0xFF);
+			*buf++ = (FLAC__byte)((sign_mant >> 16) & 0xFF);
+		}
+	}
 
-void FLAC__transform_f32_buffer_to_i32_signal(uint32_t *dest, const uint32_t *src, size_t n)
-{
-	for(size_t i = 0; i < n; i++)
-		dest[i] = FLAC__do_float_bit_manipulation(src[i]);
-}
-
-void FLAC__transform_i32_signal_to_f32_buffer(uint32_t *buffer, size_t n)
-{
-	for(size_t i = 0; i < n; i++)
-		buffer[i] = FLAC__undo_float_bit_manipulation(buffer[i]);
+	FLAC__MD5Update(ctx, ctx->internal_buf.p8, bytes_needed);
+	return true;
 }
