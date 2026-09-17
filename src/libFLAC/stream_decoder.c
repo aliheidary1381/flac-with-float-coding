@@ -3103,25 +3103,31 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 			reserved = x & 0x1f;
 			if(reserved != 0)
 				is_unparseable = true;
-			if(decorr == 0)
-				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_INDEPENDENT;
-			else if(decorr == 1)
-				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_LEFT_SIDE;
-			else if(decorr == 2)
-				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_RIGHT_SIDE;
-			else if(decorr == 3)
-				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_MID_SIDE;
-			else
-				is_unparseable = true;
-
 			/* Inherit remaining parameters from STREAMINFO_EXTENSION */
 			decoder->private_->frame.header.sample_rate = (uint32_t)rint(decoder->private_->stream_info_extension.data.stream_info_extension.sample_rate);
 			decoder->private_->frame.header.sample_rate_extension = decoder->private_->stream_info_extension.data.stream_info_extension.sample_rate;
 			decoder->private_->frame.header.channels = decoder->private_->stream_info_extension.data.stream_info_extension.channels;
 			decoder->private_->frame.header.channel_mask = decoder->private_->stream_info_extension.data.stream_info_extension.channel_mask;
 			decoder->private_->frame.header.bits_per_sample = decoder->private_->stream_info_extension.data.stream_info_extension.bits_per_sample;
+			if(decoder->private_->frame.header.channels == 0 || decoder->private_->frame.header.channels > FLAC__MAX_CHANNELS)
+				is_unparseable = true;
 			if(decoder->private_->frame.header.bits_per_sample < FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE ||
 			   decoder->private_->frame.header.bits_per_sample > FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE)
+				is_unparseable = true;
+
+			if(decorr == 0)
+				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_INDEPENDENT;
+			else if(decoder->private_->frame.header.channels == 2) {
+				if(decorr == 1)
+					decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_LEFT_SIDE;
+				else if(decorr == 2)
+					decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_RIGHT_SIDE;
+				else if(decorr == 3)
+					decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_MID_SIDE;
+				else
+					is_unparseable = true;
+			}
+			else
 				is_unparseable = true;
 			decoder->private_->frame.header.sample_type = decoder->private_->stream_info_extension.data.stream_info_extension.sample_type;
 		}
@@ -3146,6 +3152,8 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 				return false;
 			raw_header[raw_header_len++] = (FLAC__byte)x;
 			decoder->private_->frame.header.channels = x + 1;
+			if(decoder->private_->frame.header.channels == 0 || decoder->private_->frame.header.channels > FLAC__MAX_CHANNELS)
+				is_unparseable = true;
 
 			/* 3. 32-bit channel mask */
 			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &mask, 32))
@@ -3166,12 +3174,16 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 
 			if(decorr == 0)
 				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_INDEPENDENT;
-			else if(decorr == 1)
-				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_LEFT_SIDE;
-			else if(decorr == 2)
-				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_RIGHT_SIDE;
-			else if(decorr == 3)
-				decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_MID_SIDE;
+			else if(decoder->private_->frame.header.channels == 2) {
+				if(decorr == 1)
+					decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_LEFT_SIDE;
+				else if(decorr == 2)
+					decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_RIGHT_SIDE;
+				else if(decorr == 3)
+					decoder->private_->frame.header.channel_assignment = FLAC__CHANNEL_ASSIGNMENT_MID_SIDE;
+				else
+					is_unparseable = true;
+			}
 			else
 				is_unparseable = true;
 
