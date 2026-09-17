@@ -127,6 +127,9 @@ extern "C" {
 #define FLAC__MAX_BITS_PER_SAMPLE (32u)
 #endif
 
+/** The minimum sample resolution permitted by the reference codec libFLAC. */
+#define FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE (4u)
+
 /** The maximum sample resolution permitted by libFLAC.
  *
  * FLAC__MAX_BITS_PER_SAMPLE is the limit of the FLAC format.  However,

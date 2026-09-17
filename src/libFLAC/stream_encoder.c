@@ -747,7 +747,7 @@ static FLAC__StreamEncoderInitStatus init_stream_internal_(
 	else if(!encoder->protected_->do_mid_side_stereo)
 		encoder->protected_->loose_mid_side_stereo = false;
 
-	if(encoder->protected_->bits_per_sample < FLAC__MIN_BITS_PER_SAMPLE || encoder->protected_->bits_per_sample > FLAC__MAX_BITS_PER_SAMPLE)
+	if(encoder->protected_->bits_per_sample < FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE || encoder->protected_->bits_per_sample > FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE)
 		return FLAC__STREAM_ENCODER_INIT_STATUS_INVALID_BITS_PER_SAMPLE;
 
 	if(!FLAC__format_sample_rate_is_valid(encoder->protected_->sample_rate))

@@ -520,8 +520,8 @@ FLAC__bool parse_option(int option_index, const char *option_argument, CommandLi
 	}
 	else if(0 == strcmp(opt, "set-bps")) {
 		op = append_shorthand_operation(options, OP__SET_BPS);
-		if(!parse_uint32(option_argument, &(op->argument.streaminfo_uint32.value)) || op->argument.streaminfo_uint32.value < FLAC__MIN_BITS_PER_SAMPLE || op->argument.streaminfo_uint32.value > FLAC__MAX_BITS_PER_SAMPLE) {
-			flac_fprintf(stderr, "ERROR (--%s): value must be >= %u and <= %u\n", opt, FLAC__MIN_BITS_PER_SAMPLE, FLAC__MAX_BITS_PER_SAMPLE);
+		if(!parse_uint32(option_argument, &(op->argument.streaminfo_uint32.value)) || op->argument.streaminfo_uint32.value < FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE || op->argument.streaminfo_uint32.value > FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE) {
+			flac_fprintf(stderr, "ERROR (--%s): value must be >= %u and <= %u (bit depths up to %u defined by format specification are not supported by the reference implementation)\n", opt, FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE, FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE, FLAC__MAX_BITS_PER_SAMPLE);
 			ok = false;
 		}
 		else

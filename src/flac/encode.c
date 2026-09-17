@@ -1040,8 +1040,8 @@ int flac__encode_file(FILE *infile, FLAC__off_t infilesize, const char *infilena
 		return EncoderSession_finish_error(&encoder_session);
 	}
 #endif
-	if(encoder_session.info.bits_per_sample-encoder_session.info.shift < 4 || encoder_session.info.bits_per_sample-encoder_session.info.shift > FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE) {
-		flac__utils_printf(stderr, 1, "%s: ERROR: unsupported bits-per-sample %u\n", encoder_session.inbasefilename, encoder_session.info.bits_per_sample-encoder_session.info.shift);
+	if(encoder_session.info.bits_per_sample-encoder_session.info.shift < FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE || encoder_session.info.bits_per_sample-encoder_session.info.shift > FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE) {
+		flac__utils_printf(stderr, 1, "%s: ERROR: bits-per-sample (%u) is not supported (the reference codec only supports %u-%u bits per sample; bit depths up to %u are defined by the format specification but not yet implemented)\n", encoder_session.inbasefilename, encoder_session.info.bits_per_sample-encoder_session.info.shift, FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE, FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE, FLAC__MAX_BITS_PER_SAMPLE);
 		return EncoderSession_finish_error(&encoder_session);
 	}
 

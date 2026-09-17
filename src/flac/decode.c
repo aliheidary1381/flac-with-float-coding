@@ -2037,8 +2037,8 @@ void metadata_callback(const FLAC__StreamDecoder *decoder, const FLAC__StreamMet
 			decoder_session->abort_flag = true;
 			return;
 		}
-		if(decoder_session->bps < 4 || decoder_session->bps > 32) {
-			flac__utils_printf(stderr, 1, "%s: ERROR: bits per sample is %u, must be 4-32\n", decoder_session->inbasefilename, decoder_session->bps);
+		if(decoder_session->bps < FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE || decoder_session->bps > FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE) {
+			flac__utils_printf(stderr, 1, "%s: ERROR: bits per sample (%u) is not supported (the reference codec only supports %u-%u bits per sample; bit depths up to %u are defined by the format specification but not yet implemented)\n", decoder_session->inbasefilename, decoder_session->bps, FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE, FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE, FLAC__MAX_BITS_PER_SAMPLE);
 			decoder_session->abort_flag = true;
 			return;
 		}
