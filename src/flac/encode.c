@@ -1771,7 +1771,11 @@ FLAC__bool EncoderSession_init_encoder(EncoderSession *e, encode_options_t optio
 	static_metadata_t static_metadata;
 	uint32_t num_metadata = 0, ic;
 	FLAC__StreamEncoderInitStatus init_status;
+	#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	const FLAC__bool is_cdda = (e->info.sample_type == FLAC__SAMPLE_TYPE_INT) && (channels == 1 || channels == 2) && (bps == 16) && (sample_rate == 44100) && (e->info.sample_rate_extension == 0.0 || e->info.sample_rate_extension == 44100.0);
+#else
 	const FLAC__bool is_cdda = (channels == 1 || channels == 2) && (bps == 16) && (sample_rate == 44100);
+#endif
 	char apodizations[2000];
 
 	FLAC__ASSERT(sizeof(options.pictures)/sizeof(options.pictures[0]) <= 64);
