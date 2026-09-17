@@ -940,7 +940,7 @@ int parse_option(int short_option, const char *long_option, const char *option_a
 		else if(0 == strcmp(long_option, "channel-mask")) {
 			uint32_t tmp;
 			FLAC__ASSERT(0 != option_argument);
-			tmp = strtoul(option_argument, NULL, 10);
+			tmp = strtoul(option_argument, NULL, 0);
 			if(0 == tmp)
 				return usage_error("ERROR: argument to --channel-mask was 0\n");
 			option_values.format_channel_mask = tmp;

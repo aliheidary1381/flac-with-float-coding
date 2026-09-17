@@ -59,6 +59,8 @@ struct share__option long_options_[] = {
 	{ "show-bps", 0, 0, 0 },
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	{ "show-sample-type", 0, 0, 0 },
+	{ "show-sample-channel-mask", 0, 0, 0 },
+	{ "show-channel-mask", 0, 0, 0 },
 #endif
 	{ "show-total-samples", 0, 0, 0 },
 	{ "set-md5sum", 1, 0, 0 }, /* undocumented */
@@ -72,6 +74,8 @@ struct share__option long_options_[] = {
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	{ "set-sample-type", 1, 0, 0 }, /* undocumented */
 	{ "set-sample-rate-extension", 1, 0, 0 }, /* undocumented */
+	{ "set-sample-channel-mask", 1, 0, 0 }, /* undocumented */
+	{ "set-channel-mask", 1, 0, 0 }, /* undocumented */
 #endif
 	{ "set-total-samples", 1, 0, 0 }, /* undocumented */ /* WATCHOUT: used by test/test_flac.sh on windows */
 	{ "show-vendor-tag", 0, 0, 0 },
@@ -447,7 +451,7 @@ FLAC__bool parse_option(int option_index, const char *option_argument, CommandLi
 	else if(0 == strcmp(opt, "show-sample-type")) {
 		(void)append_shorthand_operation(options, OP__SHOW_SAMPLE_TYPE);
 	}
-	else if(0 == strcmp(opt, "show-sample-channel-mask")) {
+	else if(0 == strcmp(opt, "show-sample-channel-mask") || 0 == strcmp(opt, "show-channel-mask")) {
 		(void)append_shorthand_operation(options, OP__SHOW_CHANNEL_MASK);
 	}
 #endif
@@ -548,6 +552,15 @@ FLAC__bool parse_option(int option_index, const char *option_argument, CommandLi
 		op = append_shorthand_operation(options, OP__SET_SAMPLE_RATE_EXTENSION);
 		if(!parse_float64(option_argument, &(op->argument.streaminfo_extention_float64.value)) || !FLAC__format_sample_rate_is_valid_extension(op->argument.streaminfo_extention_float64.value)) {
 			flac_fprintf(stderr, "ERROR (--%s): invalid sample rate\n", opt);
+			ok = false;
+		}
+		else
+			undocumented_warning(opt);
+	}
+	else if(0 == strcmp(opt, "set-sample-channel-mask") || 0 == strcmp(opt, "set-channel-mask")) {
+		op = append_shorthand_operation(options, OP__SET_CHANNEL_MASK);
+		if(!parse_uint32(option_argument, &(op->argument.streaminfo_uint32.value))) {
+			flac_fprintf(stderr, "ERROR (--%s): invalid channel mask\n", opt);
 			ok = false;
 		}
 		else

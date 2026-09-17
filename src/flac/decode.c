@@ -2067,6 +2067,8 @@ void metadata_callback(const FLAC__StreamDecoder *decoder, const FLAC__StreamMet
 		decoder_session->channels = metadata->data.stream_info_extension.channels;
 		decoder_session->sample_type = metadata->data.stream_info_extension.sample_type;
 		decoder_session->sample_rate_extension = metadata->data.stream_info_extension.sample_rate;
+		if(metadata->data.stream_info_extension.channel_mask != 0)
+			decoder_session->channel_mask = metadata->data.stream_info_extension.channel_mask;
 
 		if(decoder_session->sample_type == FLAC__SAMPLE_TYPE_FLOAT && decoder_session->bps != 32) {
 			flac__utils_printf(stderr, 1, "%s: ERROR: float samples' bits per sample is %u, must be 32\n", decoder_session->inbasefilename, decoder_session->bps);

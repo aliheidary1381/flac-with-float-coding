@@ -2136,6 +2136,7 @@ FLAC__bool EncoderSession_init_encoder(EncoderSession *e, encode_options_t optio
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	FLAC__stream_encoder_set_sample_type(e->encoder, e->info.sample_type);
 	FLAC__stream_encoder_set_sample_rate_extension(e->encoder, e->info.sample_rate_extension);
+	FLAC__stream_encoder_set_channel_mask(e->encoder, e->info.channel_mask);
 #endif
 	FLAC__stream_encoder_set_bits_per_sample(e->encoder, bps);
 	FLAC__stream_encoder_set_sample_rate(e->encoder, sample_rate);
