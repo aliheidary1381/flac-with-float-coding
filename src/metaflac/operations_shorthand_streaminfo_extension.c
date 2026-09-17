@@ -22,6 +22,8 @@
 #  include <config.h>
 #endif
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+
 #include "options.h"
 #include "utils.h"
 #include "FLAC/assert.h"
@@ -145,3 +147,5 @@ FLAC__bool do_shorthand_operation__streaminfo_extension(const char *filename, FL
 
 	return ok;
 }
+
+#endif /* ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING */

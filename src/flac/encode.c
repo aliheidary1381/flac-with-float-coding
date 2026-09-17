@@ -178,8 +178,9 @@ static FLAC__bool read_bytes(FILE *f, FLAC__byte *buf, size_t n, FLAC__bool eof_
 static FLAC__bool read_uint16(FILE *f, FLAC__bool big_endian, FLAC__uint16 *val, const char *fn);
 static FLAC__bool read_uint32(FILE *f, FLAC__bool big_endian, FLAC__uint32 *val, const char *fn);
 static FLAC__bool read_uint64(FILE *f, FLAC__bool big_endian, FLAC__uint64 *val, const char *fn);
+#if !ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 static FLAC__bool read_sane_extended(FILE *f, FLAC__uint32 *val, const char *fn);
-#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+#else
 static FLAC__bool read_sane_extended_to_double(FILE *f, FLAC__float64 *val, const char *fn);
 #endif
 static FLAC__bool fskip_ahead(FILE *f, FLAC__uint64 offset);
@@ -1050,7 +1051,11 @@ int flac__encode_file(FILE *infile, FLAC__off_t infilesize, const char *infilena
 		FLAC__uint64 skip;
 		FLAC__uint64 until; /* a value of 0 mean end-of-stream (i.e. --until=-0) */
 		uint32_t consecutive_eos_count = 0;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 		const FLAC__float64 effective_sr = FLAC__format_sample_rate_is_valid_extension(encoder_session.info.sample_rate_extension) ? encoder_session.info.sample_rate_extension : (FLAC__float64)encoder_session.info.sample_rate;
+#else
+		const FLAC__float64 effective_sr = (FLAC__float64)encoder_session.info.sample_rate;
+#endif
 
 		switch(options.format) {
 			case FORMAT_RAW:
@@ -3026,7 +3031,8 @@ FLAC__bool read_uint64(FILE *f, FLAC__bool big_endian, FLAC__uint64 *val, const 
 	return true;
 }
 
-FLAC__bool read_sane_extended(FILE *f, FLAC__uint32 *val, const char *fn)
+#if !ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+static FLAC__bool read_sane_extended(FILE *f, FLAC__uint32 *val, const char *fn)
 	/* Read an IEEE 754 80-bit (aka SANE) extended floating point value from 'f',
 	 * convert it into an integral value and store in 'val'.  Return false if only
 	 * between 1 and 9 bytes remain in 'f', if 0 bytes remain in 'f', or if the
@@ -3055,6 +3061,7 @@ FLAC__bool read_sane_extended(FILE *f, FLAC__uint32 *val, const char *fn)
 
 	return true;
 }
+#endif
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 FLAC__bool read_sane_extended_to_double(FILE *f, FLAC__float64 *val, const char *fn)

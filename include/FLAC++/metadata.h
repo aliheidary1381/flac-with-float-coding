@@ -1086,7 +1086,9 @@ namespace FLAC {
 
 		FLACPP_API bool get_streaminfo(const char *filename, StreamInfo &streaminfo); ///< See FLAC__metadata_get_streaminfo().
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 		FLACPP_API bool get_streaminfo_extension(const char *filename, StreamInfoExtension &streaminfo_extension); ///< See FLAC__metadata_get_streaminfo().
+#endif
 
 		FLACPP_API bool get_tags(const char *filename, VorbisComment *&tags); ///< See FLAC__metadata_get_tags().
 		FLACPP_API bool get_tags(const char *filename, VorbisComment &tags); ///< See FLAC__metadata_get_tags().

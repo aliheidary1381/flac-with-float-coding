@@ -528,6 +528,7 @@ FLAC__bool do_shorthand_operation(const char *filename, FLAC__bool prefix_with_f
 		case OP__SET_TOTAL_SAMPLES:
 			ok = do_shorthand_operation__streaminfo(filename, prefix_with_filename, chain, operation, needs_write);
 			break;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 		case OP__SHOW_SAMPLE_RATE:
 		case OP__SHOW_CHANNELS:
 		case OP__SHOW_BPS:
@@ -555,6 +556,15 @@ FLAC__bool do_shorthand_operation(const char *filename, FLAC__bool prefix_with_f
 		case OP__SET_SAMPLE_RATE_EXTENSION:
 			ok = do_shorthand_operation__streaminfo_extension(filename, prefix_with_filename, chain, operation, needs_write);
 			break;
+#else
+		case OP__SHOW_SAMPLE_RATE:
+		case OP__SHOW_CHANNELS:
+		case OP__SHOW_BPS:
+		case OP__SET_CHANNELS:
+		case OP__SET_BPS:
+			ok = do_shorthand_operation__streaminfo(filename, prefix_with_filename, chain, operation, needs_write);
+			break;
+#endif
 		case OP__SHOW_VC_VENDOR:
 		case OP__SHOW_VC_FIELD:
 		case OP__REMOVE_VC_ALL:
