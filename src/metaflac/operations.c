@@ -614,6 +614,19 @@ FLAC__bool do_shorthand_operation__add_replay_gain(char **filenames, unsigned nu
 			flac_fprintf(stderr, "%s: ERROR: can't open file or get STREAMINFO block\n", filenames[i]);
 			return false;
 		}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		{
+			FLAC__StreamMetadata ext_block;
+			if(FLAC__metadata_get_streaminfo_extension(filenames[i], &ext_block)) {
+				if(FLAC__format_sample_rate_is_valid_extension(ext_block.data.stream_info_extension.sample_rate))
+					streaminfo.data.stream_info.sample_rate = (unsigned)ext_block.data.stream_info_extension.sample_rate;
+				if(ext_block.data.stream_info_extension.bits_per_sample > 0)
+					streaminfo.data.stream_info.bits_per_sample = ext_block.data.stream_info_extension.bits_per_sample;
+				if(ext_block.data.stream_info_extension.channels > 0)
+					streaminfo.data.stream_info.channels = ext_block.data.stream_info_extension.channels;
+			}
+		}
+#endif
 		if(first) {
 			first = false;
 			sample_rate = streaminfo.data.stream_info.sample_rate;

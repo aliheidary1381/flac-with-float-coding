@@ -1675,6 +1675,37 @@ FLAC__StreamDecoderWriteStatus write_callback(const FLAC__StreamDecoder *decoder
 					for(channel = 0; channel < channels; channel++)
 						((uint32_t **)buffer)[channel][wide_sample] <<= shift;/*@@@@@@un-const'ing the buffer is hacky but safe*/
 			}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+			if(decoder_session->replaygain.apply && decoder_session->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+				const float scale = (float)decoder_session->replaygain.scale;
+				for(sample = wide_sample = 0; wide_sample < wide_samples; wide_sample++) {
+					for(channel = 0; channel < channels; channel++, sample++) {
+						union {
+							FLAC__int32 i;
+							float f;
+						} u;
+						u.i = buffer[channel][wide_sample];
+						u.f *= scale;
+						ubuf.s32buffer[sample] = u.i;
+					}
+				}
+				if(is_big_endian != is_big_endian_host_) {
+					uint8_t tmp;
+					const uint32_t bytes = sample * 4;
+					uint32_t b;
+					for(b = 0; b < bytes; b += 4) {
+						tmp = ubuf.u8buffer[b];
+						ubuf.u8buffer[b] = ubuf.u8buffer[b+3];
+						ubuf.u8buffer[b+3] = tmp;
+						tmp = ubuf.u8buffer[b+1];
+						ubuf.u8buffer[b+1] = ubuf.u8buffer[b+2];
+						ubuf.u8buffer[b+2] = tmp;
+					}
+				}
+				bytes_to_write = 4 * sample;
+			}
+			else
+#endif
 			if(decoder_session->replaygain.apply) {
 				bytes_to_write = FLAC__replaygain_synthesis__apply_gain(
 					ubuf.u8buffer,
@@ -2111,8 +2142,20 @@ void metadata_callback(const FLAC__StreamDecoder *decoder, const FLAC__StreamMet
 				}
 				decoder_session->replaygain.apply = false;
 			}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+			else if(decoder_session->sample_type != FLAC__SAMPLE_TYPE_FLOAT && (decoder_session->bps < 4 || decoder_session->bps > 24)) {
+#else
 			else if(decoder_session->bps < 4 || decoder_session->bps > 24) {
+#endif
 				flac__utils_printf(stderr, 1, "%s: WARNING: can't apply ReplayGain, bit-per-sample value must be between 4 and 24\n", decoder_session->inbasefilename);
+				if(decoder_session->treat_warnings_as_errors) {
+					decoder_session->abort_flag = true;
+					return;
+				}
+				decoder_session->replaygain.apply = false;
+			}
+			else if(decoder_session->channels != 1 && decoder_session->channels != 2) {
+				flac__utils_printf(stderr, 1, "%s: WARNING: can't apply ReplayGain, number of channels (%u) must be 1 or 2\n", decoder_session->inbasefilename, decoder_session->channels);
 				if(decoder_session->treat_warnings_as_errors) {
 					decoder_session->abort_flag = true;
 					return;
@@ -2134,7 +2177,15 @@ void metadata_callback(const FLAC__StreamDecoder *decoder, const FLAC__StreamMet
 				decoder_session->replaygain.scale = grabbag__replaygain_compute_scale_factor(peak, gain, decoder_session->replaygain.spec.preamp, decoder_session->replaygain.spec.limiter == RGSS_LIMIT__PEAK);
 				FLAC__ASSERT(decoder_session->bps > 0 && decoder_session->bps <= 32);
 				FLAC__replaygain_synthesis__init_dither_context(&decoder_session->replaygain.dither_context, decoder_session->bps, decoder_session->replaygain.spec.noise_shaping);
-				flac__utils_printf(stderr, 1, "%s: INFO: applying %s ReplayGain (gain=%0.2fdB+preamp=%0.1fdB, %s noise shaping, %s limiting) to output\n", decoder_session->inbasefilename, decoder_session->replaygain.spec.use_album_gain? "album":"track", gain, decoder_session->replaygain.spec.preamp, ns[decoder_session->replaygain.spec.noise_shaping], ls[decoder_session->replaygain.spec.limiter]);
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+				if(decoder_session->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+					flac__utils_printf(stderr, 1, "%s: INFO: applying %s ReplayGain (gain=%0.2fdB+preamp=%0.1fdB, float scaling) to output\n", decoder_session->inbasefilename, decoder_session->replaygain.spec.use_album_gain? "album":"track", gain, decoder_session->replaygain.spec.preamp);
+				}
+				else
+#endif
+				{
+					flac__utils_printf(stderr, 1, "%s: INFO: applying %s ReplayGain (gain=%0.2fdB+preamp=%0.1fdB, %s noise shaping, %s limiting) to output\n", decoder_session->inbasefilename, decoder_session->replaygain.spec.use_album_gain? "album":"track", gain, decoder_session->replaygain.spec.preamp, ns[decoder_session->replaygain.spec.noise_shaping], ls[decoder_session->replaygain.spec.limiter]);
+				}
 				flac__utils_printf(stderr, 1, "%s: WARNING: applying ReplayGain is not lossless\n", decoder_session->inbasefilename);
 				/* don't check if(decoder_session->treat_warnings_as_errors) because the user explicitly asked for it */
 			}

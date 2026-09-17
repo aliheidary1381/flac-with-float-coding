@@ -2289,6 +2289,16 @@ FLAC__bool EncoderSession_process(EncoderSession *e, const FLAC__int32 * const b
 #endif
 
 	if(e->replay_gain) {
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		if(e->info.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+			if(!grabbag__replaygain_analyze_float((const float * const *)buffer, e->info.channels==2, samples)) {
+				flac__utils_printf(stderr, 1, "%s: WARNING, error while calculating ReplayGain\n", e->inbasefilename);
+				if(e->treat_warnings_as_errors)
+					return false;
+			}
+		}
+		else
+#endif
 		if(!grabbag__replaygain_analyze(buffer, e->info.channels==2, e->info.bits_per_sample, samples)) {
 			flac__utils_printf(stderr, 1, "%s: WARNING, error while calculating ReplayGain\n", e->inbasefilename);
 			if(e->treat_warnings_as_errors)
