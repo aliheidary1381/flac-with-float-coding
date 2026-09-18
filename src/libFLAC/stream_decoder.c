@@ -2524,8 +2524,9 @@ FLAC__bool read_frame_(FLAC__StreamDecoder *decoder, FLAC__bool *got_a_frame, FL
 		return true;
 	num_subframes = decoder->private_->frame.header.channels;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT)
-		num_subframes = decoder->private_->frame.header.channels * 2;
+	if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+		num_subframes = (decoder->private_->frame.header.is_fallback) ? (decoder->private_->frame.header.channels * 2) : decoder->private_->frame.header.channels;
+	}
 #endif
 	if(!allocate_output_(decoder, decoder->private_->frame.header.blocksize, num_subframes, decoder->private_->frame.header.bits_per_sample))
 		return false;
@@ -2535,8 +2536,13 @@ FLAC__bool read_frame_(FLAC__StreamDecoder *decoder, FLAC__bool *got_a_frame, FL
 		 */
 		uint32_t bps = decoder->private_->frame.header.bits_per_sample;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-		if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT)
-			bps = (channel % 2 == 0) ? 8 : 24;
+		if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+			if(decoder->private_->frame.header.is_fallback) {
+				bps = (channel % 2 == 0) ? 8 : 24;
+			} else {
+				bps = 24;
+			}
+		}
 		else
 #endif
 		switch(decoder->private_->frame.header.channel_assignment) {
@@ -2600,10 +2606,23 @@ FLAC__bool read_frame_(FLAC__StreamDecoder *decoder, FLAC__bool *got_a_frame, FL
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 			if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
 				for(channel = 0; channel < num_subframes; channel++) {
-					uint32_t sub_bps = (channel % 2 == 0) ? 8 : 24;
-					int shift_bits = 32 - sub_bps;
-					int lower_limit = INT32_MIN >> shift_bits;
-					int upper_limit = INT32_MAX >> shift_bits;
+					uint32_t sub_bps = 24;
+					uint32_t sf_c = 0, c;
+					int shift_bits, lower_limit, upper_limit;
+					for(c = 0; c < decoder->private_->frame.header.channels; c++) {
+						if(decoder->private_->frame.header.exponent_zero_offsets[c] == 0xFF) {
+							if(channel == sf_c) { sub_bps = 8; break; }
+							if(channel == sf_c + 1) { sub_bps = 24; break; }
+							sf_c += 2;
+						}
+						else {
+							if(channel == sf_c) { sub_bps = 24; break; }
+							sf_c += 1;
+						}
+					}
+					shift_bits = 32 - sub_bps;
+					lower_limit = INT32_MIN >> shift_bits;
+					upper_limit = INT32_MAX >> shift_bits;
 					for(i = 0; i < decoder->private_->frame.header.blocksize; i++) {
 						if((decoder->private_->output[channel][i] < lower_limit) ||
 						   (decoder->private_->output[channel][i] > upper_limit)) {
@@ -2796,7 +2815,7 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 	FLAC__uint32 x;
 	FLAC__uint64 xx;
 	uint32_t i, blocksize_hint = 0, sample_rate_hint = 0;
-	FLAC__byte crc8, raw_header[32]; /* MAGIC NUMBER based on the maximum frame header size (16 legacy + 16 extension), including CRC */
+	FLAC__byte crc8, raw_header[32 + FLAC__MAX_CHANNELS]; /* Header buffer accommodating legacy, extension, and per-channel float exponent offsets */
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	FLAC__bool has_extension = false;
 	FLAC__FrameHeaderExtensionMode extension_mode = FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT;
@@ -3132,7 +3151,8 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 				return false; /* read_callback_ sets the state for us */
 			raw_header[raw_header_len++] = (FLAC__byte)x;
 			decorr = x >> 5;
-			reserved = x & 0x1f;
+			decoder->private_->frame.header.is_fallback = ((x >> 4) & 1) ? true : false;
+			reserved = x & 0x0f;
 			if(reserved != 0)
 				is_unparseable = true;
 			/* Inherit remaining parameters from STREAMINFO_EXTENSION */
@@ -3219,12 +3239,13 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 			else
 				is_unparseable = true;
 
-			/* 5. 7-bit (bits_per_sample - 1) + 1-bit reserved MSB */
+			/* 5. 7-bit (bits_per_sample - 1) + 1-bit fallback flag */
 			if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
 				return false;
 			raw_header[raw_header_len++] = (FLAC__byte)x;
 			decoder->private_->frame.header.bits_per_sample = ((x >> 1) & 0x7f) + 1;
-			reserved = (x & 0x01) << 4;
+			decoder->private_->frame.header.is_fallback = (x & 0x01) ? true : false;
+			reserved = 0;
 			if(decoder->private_->frame.header.bits_per_sample < FLAC__REFERENCE_CODEC_MIN_BITS_PER_SAMPLE ||
 			   decoder->private_->frame.header.bits_per_sample > FLAC__REFERENCE_CODEC_MAX_BITS_PER_SAMPLE)
 				is_unparseable = true;
@@ -3244,6 +3265,15 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 				decoder->private_->frame.header.sample_type = FLAC__SAMPLE_TYPE_FLOAT;
 			else
 				is_unparseable = true;
+		}
+	if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT && !decoder->private_->frame.header.is_fallback) {
+			uint32_t ch;
+			for(ch = 0; ch < decoder->private_->frame.header.channels; ch++) {
+				if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
+					return false;
+				raw_header[raw_header_len++] = (FLAC__byte)x;
+				decoder->private_->frame.header.exponent_zero_offsets[ch] = (FLAC__byte)x;
+			}
 		}
 	}
 #endif
@@ -3946,7 +3976,12 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 			if(frame->header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
 				uint32_t channel;
 				for(channel = 0; channel < frame->header.channels; channel++) {
-					FLAC__combine_subframe_signals_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], decoder->private_->output[2*channel+1], frame->header.blocksize);
+					if(frame->header.is_fallback) {
+						FLAC__combine_subframe_signals_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], decoder->private_->output[2*channel+1], frame->header.blocksize, frame->header.exponent_zero_offsets[channel], true);
+					}
+					else {
+						FLAC__combine_subframe_signals_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[channel], NULL, frame->header.blocksize, frame->header.exponent_zero_offsets[channel], false);
+					}
 				}
 			}
 #endif
@@ -3954,14 +3989,6 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 			delta = (uint32_t)(target_sample - this_frame_sample);
 			/* kick out of seek mode */
 			decoder->private_->is_seeking = false;
-#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-			if(frame->header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
-				uint32_t c_idx;
-				for(c_idx = 0; c_idx < frame->header.channels; c_idx++) {
-					FLAC__combine_subframe_signals_to_f32_buffer((uint32_t *)decoder->private_->output[c_idx], decoder->private_->output[2*c_idx], decoder->private_->output[2*c_idx+1], frame->header.blocksize);
-				}
-			}
-#endif
 			/* shift out the samples before target_sample */
 			if(delta > 0) {
 				uint32_t channel;
@@ -3991,28 +4018,33 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 		 * If we never got STREAMINFO, turn off MD5 checking to save
 		 * cycles since we don't have a sum to compare to anyway
 		 */
-		if(!decoder->private_->has_stream_info)
-			decoder->private_->do_md5_checking = false;
-		if(decoder->private_->do_md5_checking) {
-#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-			if(frame->header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
-				if(!FLAC__MD5Accumulate_float_split(&decoder->private_->md5context, buffer, frame->header.channels, frame->header.blocksize))
-					return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
-			}
-			else
-#endif
-			if(!FLAC__MD5Accumulate(&decoder->private_->md5context, buffer, frame->header.channels, frame->header.blocksize, (frame->header.bits_per_sample+7) / 8))
-				return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
-		}
-
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 		if(frame->header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
 			uint32_t channel;
 			for(channel = 0; channel < frame->header.channels; channel++) {
-				FLAC__combine_subframe_signals_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], decoder->private_->output[2*channel+1], frame->header.blocksize);
+				if(frame->header.is_fallback) {
+					FLAC__combine_subframe_signals_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], decoder->private_->output[2*channel+1], frame->header.blocksize, frame->header.exponent_zero_offsets[channel], true);
+				}
+				else {
+					FLAC__combine_subframe_signals_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[channel], NULL, frame->header.blocksize, frame->header.exponent_zero_offsets[channel], false);
+				}
 			}
 		}
 #endif
+
+		if(!decoder->private_->has_stream_info)
+			decoder->private_->do_md5_checking = false;
+		if(decoder->private_->do_md5_checking) {
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		if(frame->header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
+			if(!FLAC__MD5Accumulate_float(&decoder->private_->md5context, (const uint32_t * const *)decoder->private_->output, frame->header.channels, frame->header.blocksize))
+				return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+		}
+		else
+#endif
+		if(!FLAC__MD5Accumulate(&decoder->private_->md5context, buffer, frame->header.channels, frame->header.blocksize, (frame->header.bits_per_sample+7) / 8))
+			return FLAC__STREAM_DECODER_WRITE_STATUS_ABORT;
+		}
 
 		return decoder->private_->write_callback(decoder, frame, buffer, decoder->private_->client_data);
 	}

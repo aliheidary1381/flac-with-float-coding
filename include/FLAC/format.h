@@ -492,6 +492,10 @@ typedef struct {
 	/**< WAVEFORMATEXTENSIBLE channel mask. */
 	FLAC__SampleType sample_type;
 	/**< The sample format enum (PCM integer or PCM float). */
+	FLAC__byte exponent_zero_offsets[FLAC__MAX_CHANNELS];
+	/**< Base exponent (DC offset) per channel for float samples. */
+	FLAC__bool is_fallback;
+	/**< Frame-wide fallback flag: true = 2 subframes per channel (raw exp + cyclic mantissa), false = 1 subframe per channel. */
 #endif
 } FLAC__FrameHeader;
 
@@ -508,7 +512,8 @@ extern FLAC_API const uint32_t FLAC__FRAME_HEADER_CRC_LEN; /**< == 8 (bits) */
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_COMPACT_DECORRELATION_LEN; /**< == 3 (bits) */
-extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_COMPACT_RESERVED_LEN; /**< == 5 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_COMPACT_FLOAT_FALLBACK_MODE_LEN; /**< == 1 (bit) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_COMPACT_RESERVED_LEN; /**< == 4 (bits) */
 #define FLAC__FRAME_HEADER_EXTENSION_COMPACT_LENGTH (1u)
 
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_SAMPLE_RATE_LEN; /**< == 64 (bits) */
@@ -518,7 +523,8 @@ extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_SPECIAL_MASK_LE
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_IGNORE_MASK_LEN; /**< == 2 (bits) */
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_DECORRELATION_LEN; /**< == 3 (bits) */
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_BITS_PER_SAMPLE_LEN; /**< == 7 (bits) */
-extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_RESERVED_LEN; /**< == 5 (bits) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_FLOAT_FALLBACK_MODE_LEN; /**< == 1 (bit) */
+extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_RESERVED_LEN; /**< == 4 (bits) */
 extern FLAC_API const uint32_t FLAC__FRAME_HEADER_EXTENSION_FULL_SAMPLE_FORMAT_LEN; /**< == 4 (bits) */
 #define FLAC__FRAME_HEADER_EXTENSION_FULL_LENGTH (16u)
 #endif

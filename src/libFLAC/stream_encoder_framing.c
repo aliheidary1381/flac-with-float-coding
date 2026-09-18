@@ -428,10 +428,11 @@ FLAC__bool FLAC__frame_add_header(const FLAC__FrameHeader *header, FLAC__BitWrit
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	if(header->has_extension) {
+		uint32_t fallback_bit = header->is_fallback ? 1 : 0;
 		if(header->extension_mode == FLAC__FRAME_HEADER_EXTENSION_MODE_COMPACT) {
-			/* Compact Mode: 8 bits (3 bits decorrelation ID + 5 bits reserved 0) */
+			/* Compact Mode: 8 bits (3 bits decorrelation ID + 1 bit fallback + 4 bits reserved 0) */
 			uint32_t decorr = (uint32_t)header->channel_assignment & 0x07;
-			if(!FLAC__bitwriter_write_raw_uint32(bw, decorr << 5, 8))
+			if(!FLAC__bitwriter_write_raw_uint32(bw, (decorr << 5) | (fallback_bit << 4), 8))
 				return false;
 		} else {
 			/* Full Mode: 128 bits */
@@ -451,12 +452,19 @@ FLAC__bool FLAC__frame_add_header(const FLAC__FrameHeader *header, FLAC__BitWrit
 			/* 4. 3 bits special mask (0) + 5. 2 bits ignore mask (0) + 6. 3 bits decorrelation ID */
 			if(!FLAC__bitwriter_write_raw_uint32(bw, decorr, 8))
 				return false;
-			/* 7. 7-bit (bits_per_sample - 1) + 8. 1 bit MSB of 5-bit reserved (0) */
-			if(!FLAC__bitwriter_write_raw_uint32(bw, (header->bits_per_sample - 1) << 1, 8))
+			/* 7. 7-bit (bits_per_sample - 1) + 8. 1 bit MSB of reserved: fallback flag */
+			if(!FLAC__bitwriter_write_raw_uint32(bw, ((header->bits_per_sample - 1) << 1) | fallback_bit, 8))
 				return false;
 			/* 8. 4 bits remaining reserved (0) + 9. 4-bit sample format */
 			if(!FLAC__bitwriter_write_raw_uint32(bw, sample_format, 8))
 				return false;
+		}
+		if(header->sample_type == FLAC__SAMPLE_TYPE_FLOAT && !header->is_fallback) {
+			uint32_t ch;
+			for(ch = 0; ch < header->channels; ch++) {
+				if(!FLAC__bitwriter_write_raw_uint32(bw, header->exponent_zero_offsets[ch], 8))
+					return false;
+			}
 		}
 	}
 #endif

@@ -40,6 +40,10 @@ FLAC_API FLAC__bool FLAC__stream_encoder_disable_instruction_set(FLAC__StreamEnc
 FLAC_API FLAC__bool FLAC__stream_encoder_disable_constant_subframes(FLAC__StreamEncoder *encoder, FLAC__bool value);
 FLAC_API FLAC__bool FLAC__stream_encoder_disable_fixed_subframes(FLAC__StreamEncoder *encoder, FLAC__bool value);
 FLAC_API FLAC__bool FLAC__stream_encoder_disable_verbatim_subframes(FLAC__StreamEncoder *encoder, FLAC__bool value);
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+FLAC_API FLAC__bool FLAC__stream_encoder_set_force_1subframe_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value);
+FLAC_API FLAC__bool FLAC__stream_encoder_set_force_fallback_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value);
+#endif
 /*
  * The following two routines were intended as debug routines and are not
  * in the public headers, but SHOULD NOT CHANGE! It is known they are used

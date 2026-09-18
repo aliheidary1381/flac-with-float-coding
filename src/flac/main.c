@@ -234,6 +234,10 @@ static struct share__option long_options_[] = {
 	{ "disable-fixed-subframes"   , share__no_argument, 0, 0 },
 	{ "disable-verbatim-subframes", share__no_argument, 0, 0 },
 	{ "no-md5-sum"                , share__no_argument, 0, 0 },
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	{ "force-1subframe-mode-which-is-not-lossless", share__no_argument, 0, 0 },
+	{ "force-fallback-mode"      , share__no_argument, 0, 0 },
+#endif
 
 	{0, 0, 0, 0}
 };
@@ -320,6 +324,10 @@ static struct {
 		FLAC__bool disable_fixed_subframes;
 		FLAC__bool disable_verbatim_subframes;
 		FLAC__bool do_md5;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		FLAC__bool force_1subframe_float_mode;
+		FLAC__bool force_fallback_float_mode;
+#endif
 	} debug;
 } option_values;
 
@@ -705,6 +713,10 @@ FLAC__bool init_options(void)
 	option_values.debug.disable_fixed_subframes = false;
 	option_values.debug.disable_verbatim_subframes = false;
 	option_values.debug.do_md5 = true;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	option_values.debug.force_1subframe_float_mode = false;
+	option_values.debug.force_fallback_float_mode = false;
+#endif
 
 	if(0 == (option_values.vorbis_comment = FLAC__metadata_object_new(FLAC__METADATA_TYPE_VORBIS_COMMENT)))
 		return false;
@@ -1062,6 +1074,14 @@ int parse_option(int short_option, const char *long_option, const char *option_a
 		else if(0 == strcmp(long_option, "no-md5-sum")) {
 			option_values.debug.do_md5 = false;
 		}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		else if(0 == strcmp(long_option, "force-1subframe-mode-which-is-not-lossless")) {
+			option_values.debug.force_1subframe_float_mode = true;
+		}
+		else if(0 == strcmp(long_option, "force-fallback-mode")) {
+			option_values.debug.force_fallback_float_mode = true;
+		}
+#endif
 		else if(0 == strcmp(long_option, "no-error-on-compression-fail")) {
 			option_values.error_on_compression_fail = false;
 		}
@@ -1830,6 +1850,10 @@ int encode_file(const char *infilename, FLAC__bool is_first_file, FLAC__bool is_
 	encode_options.debug.disable_fixed_subframes = option_values.debug.disable_fixed_subframes;
 	encode_options.debug.disable_verbatim_subframes = option_values.debug.disable_verbatim_subframes;
 	encode_options.debug.do_md5 = option_values.debug.do_md5;
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	encode_options.debug.force_1subframe_float_mode = option_values.debug.force_1subframe_float_mode;
+	encode_options.debug.force_fallback_float_mode = option_values.debug.force_fallback_float_mode;
+#endif
 	encode_options.error_on_compression_fail = option_values.error_on_compression_fail;
 	encode_options.limit_min_bitrate = option_values.limit_min_bitrate;
 	encode_options.relaxed_foreign_metadata_handling = option_values.keep_foreign_metadata_if_present;
