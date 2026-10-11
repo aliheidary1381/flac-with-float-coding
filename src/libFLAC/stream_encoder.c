@@ -269,6 +269,7 @@ static FLAC__bool process_subframe_(
 	const FLAC__FrameHeader *frame_header,
 	uint32_t subframe_bps,
 	const void *integer_signal,
+	const FLAC__int32 *delta_signal,
 	FLAC__Subframe *subframe[2],
 	FLAC__EntropyCodingMethod_PartitionedRiceContents *partitioned_rice_contents[2],
 	void *residual[2],
@@ -547,8 +548,7 @@ typedef struct FLAC__StreamEncoderPrivate {
 	FLAC__bool disable_fixed_subframes;
 	FLAC__bool disable_verbatim_subframes;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	FLAC__bool force_1subframe_float_mode;
-	FLAC__bool force_fallback_float_mode;
+	FLAC__FloatMode float_mode;
 #endif
 	FLAC__bool is_ogg;
 	FLAC__StreamEncoderReadCallback read_callback; /* currently only needed for Ogg FLAC */
@@ -2536,26 +2536,32 @@ FLAC_API FLAC__bool FLAC__stream_encoder_disable_verbatim_subframes(FLAC__Stream
 }
 
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-FLAC_API FLAC__bool FLAC__stream_encoder_set_force_1subframe_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value)
+FLAC_API FLAC__bool FLAC__stream_encoder_set_float_mode(FLAC__StreamEncoder *encoder, FLAC__FloatMode mode)
 {
 	FLAC__ASSERT(0 != encoder);
 	FLAC__ASSERT(0 != encoder->private_);
 	FLAC__ASSERT(0 != encoder->protected_);
 	if(encoder->protected_->state != FLAC__STREAM_ENCODER_UNINITIALIZED)
 		return false;
-	encoder->private_->force_1subframe_float_mode = value;
+	encoder->private_->float_mode = mode;
 	return true;
+}
+
+FLAC_API FLAC__FloatMode FLAC__stream_encoder_get_float_mode(const FLAC__StreamEncoder *encoder)
+{
+	FLAC__ASSERT(0 != encoder);
+	FLAC__ASSERT(0 != encoder->private_);
+	return encoder->private_->float_mode;
+}
+
+FLAC_API FLAC__bool FLAC__stream_encoder_set_force_dpa_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value)
+{
+	return FLAC__stream_encoder_set_float_mode(encoder, value ? FLAC__FLOAT_MODE_ALIGNED : FLAC__FLOAT_MODE_UNKNOWN);
 }
 
 FLAC_API FLAC__bool FLAC__stream_encoder_set_force_fallback_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value)
 {
-	FLAC__ASSERT(0 != encoder);
-	FLAC__ASSERT(0 != encoder->private_);
-	FLAC__ASSERT(0 != encoder->protected_);
-	if(encoder->protected_->state != FLAC__STREAM_ENCODER_UNINITIALIZED)
-		return false;
-	encoder->private_->force_fallback_float_mode = value;
-	return true;
+	return FLAC__stream_encoder_set_float_mode(encoder, value ? FLAC__FLOAT_MODE_FALLBACK : FLAC__FLOAT_MODE_UNKNOWN);
 }
 #endif
 
@@ -3306,8 +3312,7 @@ void set_defaults_(FLAC__StreamEncoder *encoder)
 	encoder->private_->disable_fixed_subframes = false;
 	encoder->private_->disable_verbatim_subframes = false;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-	encoder->private_->force_1subframe_float_mode = false;
-	encoder->private_->force_fallback_float_mode = false;
+	encoder->private_->float_mode = FLAC__FLOAT_MODE_UNKNOWN;
 #endif
 	encoder->private_->is_ogg = false;
 	encoder->private_->read_callback = 0;
@@ -3531,12 +3536,10 @@ FLAC__bool resize_buffers_(FLAC__StreamEncoder *encoder, uint32_t new_blocksize)
 						memset(encoder->private_->threadtask[t]->integer_signal[i], 0, sizeof(FLAC__int32)*4);
 						encoder->private_->threadtask[t]->integer_signal[i] += 4;
 					}
-					if(i < encoder->protected_->channels) {
-						ok = ok && FLAC__memory_alloc_aligned_int64_array(new_blocksize+4+OVERREAD_, &encoder->private_->threadtask[t]->integer_signal64_unaligned[i], &encoder->private_->threadtask[t]->integer_signal64[i]);
-						if(ok) {
-							memset(encoder->private_->threadtask[t]->integer_signal64[i], 0, sizeof(FLAC__int64)*4);
-							encoder->private_->threadtask[t]->integer_signal64[i] += 4;
-						}
+					ok = ok && FLAC__memory_alloc_aligned_int64_array(new_blocksize+4+OVERREAD_, &encoder->private_->threadtask[t]->integer_signal64_unaligned[i], &encoder->private_->threadtask[t]->integer_signal64[i]);
+					if(ok) {
+						memset(encoder->private_->threadtask[t]->integer_signal64[i], 0, sizeof(FLAC__int64)*4);
+						encoder->private_->threadtask[t]->integer_signal64[i] += 4;
 					}
 				}
 				else
@@ -4241,10 +4244,10 @@ FLAC__bool process_frame_(FLAC__StreamEncoder *encoder, FLAC__bool is_last_block
 				return false;
 			}
 		}
-		if(encoder->private_->force_fallback_float_mode) {
+		if(encoder->private_->float_mode == FLAC__FLOAT_MODE_FALLBACK) {
 			frame_lossless = false;
 		}
-		else if(encoder->private_->force_1subframe_float_mode) {
+		else if(encoder->private_->float_mode == FLAC__FLOAT_MODE_ALIGNED) {
 			FLAC__compute_channel_base_exp_float((const FLAC__int32 * const *)encoder->private_->threadtask[0]->integer_signal, encoder->protected_->channels, encoder->protected_->blocksize, channel_base_exp);
 			frame_lossless = true;
 		}
@@ -4265,8 +4268,17 @@ FLAC__bool process_frame_(FLAC__StreamEncoder *encoder, FLAC__bool is_last_block
 			FLAC__transform_frame_fallback_float(encoder->private_->threadtask[0]->integer_signal, encoder->protected_->channels, encoder->protected_->blocksize);
 		}
 		else {
-			/* Lossless 1-subframe mode per channel: preprocessed two's complement 64-bit integer into integer_signal[ch] */
-			FLAC__transform_frame_lossless_1subframe_float(encoder->private_->threadtask[0]->integer_signal64, (const FLAC__int32 * const *)encoder->private_->threadtask[0]->integer_signal, channel_base_exp, encoder->private_->threadtask[0]->exponent_zero_offsets, encoder->protected_->channels, encoder->protected_->blocksize);
+			/* DPA mode: 2 subframes per channel (Delta and Audio) */
+			FLAC__transform_frame_dpa_float(
+				encoder->private_->threadtask[0]->integer_signal,
+				encoder->private_->threadtask[0]->integer_signal64,
+				NULL,
+				(const FLAC__int32 * const *)encoder->private_->threadtask[0]->integer_signal,
+				channel_base_exp,
+				encoder->private_->threadtask[0]->exponent_zero_offsets,
+				encoder->protected_->channels,
+				encoder->protected_->blocksize
+			);
 		}
 
 
@@ -4426,8 +4438,7 @@ FLAC__bool process_frame_(FLAC__StreamEncoder *encoder, FLAC__bool is_last_block
 			uint32_t num_sf = encoder->protected_->channels;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 			if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
-				if(encoder->private_->threadtask[0]->is_fallback)
-					num_sf = encoder->protected_->channels * 2;
+				num_sf = encoder->protected_->channels * 2;
 			}
 #endif
 			if(encoder->protected_->do_md5
@@ -4465,9 +4476,15 @@ FLAC__bool process_frame_(FLAC__StreamEncoder *encoder, FLAC__bool is_last_block
 			{
 				size_t sample_size = sizeof(FLAC__int32);
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-				if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT && !encoder->private_->threadtask[0]->is_fallback)
-					sample_size = sizeof(FLAC__int64);
+				if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT && !encoder->private_->threadtask[0]->is_fallback) {
+					for(i = 0; i < encoder->protected_->channels; i++) {
+						memcpy(encoder->private_->threadtask[encoder->private_->next_thread]->integer_signal[2 * i], encoder->private_->threadtask[0]->integer_signal[2 * i], encoder->protected_->blocksize * sizeof(FLAC__int32));
+						memcpy(encoder->private_->threadtask[encoder->private_->next_thread]->integer_signal64[2 * i + 1], encoder->private_->threadtask[0]->integer_signal64[2 * i + 1], encoder->protected_->blocksize * sizeof(FLAC__int64));
+					}
+				}
+				else
 #endif
+				{
 #if FLAC__HAS_INT128
 				if(encoder->protected_->bits_per_sample > 64)
 					sample_size = sizeof(FLAC__int128);
@@ -4477,6 +4494,7 @@ FLAC__bool process_frame_(FLAC__StreamEncoder *encoder, FLAC__bool is_last_block
 					sample_size = sizeof(FLAC__int64);
 				for(i = 0; i < num_sf; i++)
 					memcpy(encoder->private_->threadtask[encoder->private_->next_thread]->integer_signal[i], encoder->private_->threadtask[0]->integer_signal[i], encoder->protected_->blocksize * sample_size);
+				}
 			}
 		}
 
@@ -4732,13 +4750,13 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 	num_subframes = encoder->protected_->channels;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT)
-		num_subframes = (frame_header.is_fallback) ? (encoder->protected_->channels * 2) : encoder->protected_->channels;
+		num_subframes = encoder->protected_->channels * 2;
 #endif
 
 	if(encoder->protected_->do_mid_side_stereo && encoder->protected_->channels == 2
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	   && (encoder->protected_->bits_per_sample <= 63 || encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT)
-	   && (encoder->protected_->sample_type != FLAC__SAMPLE_TYPE_FLOAT || frame_header.is_fallback || frame_header.exponent_zero_offsets[0] == frame_header.exponent_zero_offsets[1])
+	   && (encoder->protected_->sample_type != FLAC__SAMPLE_TYPE_FLOAT || frame_header.is_fallback)
 #else
 	   && encoder->protected_->bits_per_sample <= 63
 #endif
@@ -4872,24 +4890,20 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 		for(channel = 0; channel < num_subframes; channel++) {
 			uint32_t subframe_bps;
 			uint32_t w;
-#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-			if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
-				if(frame_header.is_fallback) {
-					subframe_bps = (channel % 2 == 0) ? 8 : 24;
-				} else {
-					subframe_bps = threadtask->frame_bps;
-				}
-			}
-#endif
 			subframe_bps = encoder->protected_->bits_per_sample;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 			if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
 				if(frame_header.is_fallback) {
 					subframe_bps = (channel % 2 == 0) ? 8 : 24;
 				} else {
-					subframe_bps = threadtask->frame_bps;
+					subframe_bps = (channel % 2 == 0) ? 8 : threadtask->frame_bps;
 				}
 			}
+#endif
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+			if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT && !frame_header.is_fallback)
+				w = 0;
+			else
 #endif
 			if(subframe_bps <= 32)
 				w = get_wasted_bits_(threadtask->integer_signal[channel], encoder->protected_->blocksize);
@@ -4964,6 +4978,7 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 		for(channel = 0; channel < num_subframes; channel++) {
 			const void *signal_ws;
 			void *res_ws[2];
+			const FLAC__int32 *delta_signal = NULL;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 			if(!do_independent && (channel % 2 == 0))
 				continue; /* Exponents handled in do_mid_side */
@@ -4992,6 +5007,12 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 				res_ws[0] = threadtask->residual_workspace[channel][0];
 				res_ws[1] = threadtask->residual_workspace[channel][1];
 			}
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+			if(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT && !frame_header.is_fallback && (channel % 2 == 1)) {
+				delta_signal = threadtask->integer_signal[channel - 1];
+			}
+#endif
+
 			if(!
 				process_subframe_(
 					encoder,
@@ -5001,6 +5022,7 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 					&frame_header,
 					threadtask->subframe_bps[channel],
 					signal_ws,
+					delta_signal,
 					threadtask->subframe_workspace_ptr[channel],
 					threadtask->partitioned_rice_contents_workspace_ptr[channel],
 					res_ws,
@@ -5055,6 +5077,7 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 					&frame_header,
 					threadtask->subframe_bps_mid_side[channel],
 					integer_signal_,
+					/*delta_signal=*/NULL,
 					threadtask->subframe_workspace_ptr_mid_side[channel],
 					threadtask->partitioned_rice_contents_workspace_ptr_mid_side[channel],
 				res_ws,
@@ -5069,7 +5092,11 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 	/*
 	 * Compose the frame bitbuffer
 	 */
-	if((do_independent && do_mid_side) || encoder->protected_->loose_mid_side_stereo) {
+	if(((do_independent && do_mid_side) || encoder->protected_->loose_mid_side_stereo)
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	   && !(encoder->protected_->sample_type == FLAC__SAMPLE_TYPE_FLOAT && !frame_header.is_fallback)
+#endif
+	) {
 		uint32_t left_bps = 0, right_bps = 0; /* initialized only to prevent superfluous compiler warning */
 		FLAC__Subframe *left_subframe = 0, *right_subframe = 0; /* initialized only to prevent superfluous compiler warning */
 		FLAC__ChannelAssignment channel_assignment;
@@ -5232,6 +5259,95 @@ FLAC__bool process_subframes_(FLAC__StreamEncoder *encoder, FLAC__StreamEncoderT
 	return true;
 }
 
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+static uint32_t repartition_dpa_subframe_(
+	FLAC__StreamEncoder *encoder,
+	FLAC__StreamEncoderThreadTask *threadtask,
+	const FLAC__FrameHeader *frame_header,
+	uint32_t subframe_bps,
+	const FLAC__int32 *delta_signal,
+	FLAC__Subframe *win_subframe,
+	void *residual,
+	uint32_t rice_parameter_limit,
+	uint32_t min_partition_order,
+	uint32_t max_partition_order,
+	uint32_t current_best_bits
+)
+{
+	uint32_t order = 0;
+	uint32_t residual_samples = 0;
+	if(win_subframe->type == FLAC__SUBFRAME_TYPE_LPC) {
+		order = win_subframe->data.lpc.order;
+		residual_samples = frame_header->blocksize - order;
+	}
+	else if(win_subframe->type == FLAC__SUBFRAME_TYPE_FIXED) {
+		order = win_subframe->data.fixed.order;
+		residual_samples = frame_header->blocksize - order;
+	}
+	if(residual_samples > 0) {
+		uint32_t residual_bits;
+		uint32_t estimate;
+		if(subframe_bps <= 32) {
+			FLAC__int32 *res32 = (FLAC__int32 *)residual;
+			FLAC__normalize_residual_dpa_32(res32, delta_signal, residual_samples, order);
+			residual_bits = find_best_partition_order_(
+				encoder->private_,
+				threadtask,
+				res32,
+				threadtask->abs_residual_partition_sums,
+				threadtask->raw_bits_per_partition,
+				residual_samples,
+				order,
+				rice_parameter_limit,
+				min_partition_order,
+				max_partition_order,
+				subframe_bps,
+				encoder->protected_->do_escape_coding,
+				encoder->protected_->rice_parameter_search_dist,
+				(win_subframe->type == FLAC__SUBFRAME_TYPE_LPC) ? &win_subframe->data.lpc.entropy_coding_method : &win_subframe->data.fixed.entropy_coding_method
+			);
+		}
+		else {
+			FLAC__int64 *res64 = (FLAC__int64 *)residual;
+			FLAC__normalize_residual_dpa_64(res64, delta_signal, residual_samples, order);
+			residual_bits = find_best_partition_order_64_(
+				encoder->private_,
+				threadtask,
+				res64,
+				threadtask->abs_residual_partition_sums,
+				threadtask->raw_bits_per_partition,
+				residual_samples,
+				order,
+				rice_parameter_limit,
+				min_partition_order,
+				max_partition_order,
+				subframe_bps,
+				encoder->protected_->do_escape_coding,
+				encoder->protected_->rice_parameter_search_dist,
+				(win_subframe->type == FLAC__SUBFRAME_TYPE_LPC) ? &win_subframe->data.lpc.entropy_coding_method : &win_subframe->data.fixed.entropy_coding_method
+			);
+		}
+
+		if(win_subframe->type == FLAC__SUBFRAME_TYPE_LPC) {
+			estimate = FLAC__SUBFRAME_ZERO_PAD_LEN + FLAC__SUBFRAME_TYPE_LEN + FLAC__SUBFRAME_WASTED_BITS_FLAG_LEN + win_subframe->wasted_bits + FLAC__SUBFRAME_LPC_QLP_COEFF_PRECISION_LEN + FLAC__SUBFRAME_LPC_QLP_SHIFT_LEN + (order * (win_subframe->data.lpc.qlp_coeff_precision + subframe_bps));
+			if(residual_bits < UINT32_MAX - estimate)
+				estimate += residual_bits;
+			else
+				estimate = UINT32_MAX;
+			return estimate;
+		} else {
+			estimate = FLAC__SUBFRAME_ZERO_PAD_LEN + FLAC__SUBFRAME_TYPE_LEN + FLAC__SUBFRAME_WASTED_BITS_FLAG_LEN + win_subframe->wasted_bits + (order * subframe_bps);
+			if(residual_bits < UINT32_MAX - estimate)
+				estimate += residual_bits;
+			else
+				estimate = UINT32_MAX;
+			return estimate;
+		}
+	}
+	return current_best_bits;
+}
+#endif
+
 FLAC__bool process_subframe_(
 	FLAC__StreamEncoder *encoder,
 	FLAC__StreamEncoderThreadTask *threadtask,
@@ -5240,6 +5356,7 @@ FLAC__bool process_subframe_(
 	const FLAC__FrameHeader *frame_header,
 	uint32_t subframe_bps,
 	const void *integer_signal,
+	const FLAC__int32 *delta_signal,
 	FLAC__Subframe *subframe[2],
 	FLAC__EntropyCodingMethod_PartitionedRiceContents *partitioned_rice_contents[2],
 	void *residual[2],
@@ -5548,6 +5665,24 @@ FLAC__bool process_subframe_(
 		FLAC__ASSERT(_best_subframe == 0);
 		_best_bits = evaluate_verbatim_subframe_(encoder, threadtask, integer_signal, frame_header->blocksize, subframe_bps, subframe[_best_subframe]);
 	}
+
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+	if(delta_signal != NULL) {
+		_best_bits = repartition_dpa_subframe_(
+			encoder,
+			threadtask,
+			frame_header,
+			subframe_bps,
+			delta_signal,
+			subframe[_best_subframe],
+			residual[_best_subframe],
+			rice_parameter_limit,
+			min_partition_order,
+			max_partition_order,
+			_best_bits
+		);
+	}
+#endif
 
 	*best_subframe = _best_subframe;
 	*best_bits = _best_bits;

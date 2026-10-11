@@ -41,7 +41,9 @@ FLAC_API FLAC__bool FLAC__stream_encoder_disable_constant_subframes(FLAC__Stream
 FLAC_API FLAC__bool FLAC__stream_encoder_disable_fixed_subframes(FLAC__StreamEncoder *encoder, FLAC__bool value);
 FLAC_API FLAC__bool FLAC__stream_encoder_disable_verbatim_subframes(FLAC__StreamEncoder *encoder, FLAC__bool value);
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
-FLAC_API FLAC__bool FLAC__stream_encoder_set_force_1subframe_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value);
+FLAC_API FLAC__bool FLAC__stream_encoder_set_float_mode(FLAC__StreamEncoder *encoder, FLAC__FloatMode mode);
+FLAC_API FLAC__FloatMode FLAC__stream_encoder_get_float_mode(const FLAC__StreamEncoder *encoder);
+FLAC_API FLAC__bool FLAC__stream_encoder_set_force_dpa_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value);
 FLAC_API FLAC__bool FLAC__stream_encoder_set_force_fallback_float_mode(FLAC__StreamEncoder *encoder, FLAC__bool value);
 #endif
 /*

@@ -67,7 +67,7 @@ Possible design choices are listed below. The further we go, the higher the leve
 */
 
 /*
-Binary Positional Notation Transformation (1-subframe mode):
+Binary Positional Notation Transformation (1-subframe mode & DPA mode):
    In binary positional notation, each normalized float sample (+/- 1.mant * 2^(exp - 127)) has:
      - highest active bit position = exp
      - lowest active bit position = exp - 23 + ctz(explicit_mant)
@@ -80,12 +80,14 @@ Binary Positional Notation Transformation (1-subframe mode):
      shift = (exp_i - 23) - lowest_pos >= 0
    into an exact two's complement signed integer of width up to 63 bits without losing any bit.
    When bps <= 63 (and no special NaN/Inf/-0.0f conditions exist), the frame is encoded
-   losslessly in 1 subframe per channel at dynamic bps.
+   losslessly in Dynamic Positional Alignment (DPA) mode (2 subframes per channel):
+     - Delta subframe (8 bps): sample shifts Delta_i = max(0, (exp_i - 23) - lowest_pos)
+     - Audio subframe (up to 63 bps): aligned integer x_i with normalized residuals Q_i = r_i >> Delta_i
    The per-channel base exponent (base_exp) is stored in the frame header (in exponent_zero_offsets).
 
 Frame Mode Selection & Fallback Two's Complement Conversion:
    - Mode flag: A 1-bit fallback flag is stored in one of the reserved bits of the frame header
-     extension (0 = lossless 1-subframe mode at dynamic bps <= 63, 1 = fallback 2-subframe mode).
+     extension (0 = lossless DPA mode at dynamic bps <= 63, 1 = fallback 2-subframe mode).
    - Fallback mode: When a frame has bps > 63 or contains special float conditions (NaN, Inf,
      subnormals, or -0.0f), it falls back to 2 subframes per channel (exponent + significand):
        * Exponent channel (8 bits): stored with a -128 DC offset ([-128, 127]).
@@ -102,6 +104,7 @@ Frame Mode Selection & Fallback Two's Complement Conversion:
 #include <stdint.h>
 #include "private/macros.h"
 #include "private/transform_float.h"
+#include "FLAC/assert.h"
 #include "private/bitmath.h"
 #include "private/md5.h"
 #include "share/alloc.h"
@@ -243,9 +246,16 @@ void FLAC__combine_subframe_signals_fallback_to_f32_buffer(uint32_t *dest, const
  * Recombines 1 subframe preprocessed two's complement integer signal (32 bps) into standard 32-bit IEEE 754
  * floating-point raw words via base_exp = lowest_pos.
  */
-void FLAC__combine_subframe_signals_lossless_to_f32_buffer_32(uint32_t *dest, const FLAC__int32 *sig_signal, size_t n, FLAC__byte base_exp)
+
+
+/*
+ * Recombines DPA mode integer subframes (8-bit delta stream and aligned audio integer signal)
+ * into standard 32-bit IEEE 754 floating-point raw words.
+ */
+void FLAC__combine_subframe_signals_dpa_to_f32_buffer_32(uint32_t *dest, const FLAC__int32 *delta_signal, const FLAC__int32 *sig_signal, size_t n, FLAC__byte base_exp_offset)
 {
 	size_t i;
+	(void)delta_signal;
 	for (i = 0; i < n; i++) {
 		FLAC__int32 val = sig_signal[i];
 		if (val == 0) {
@@ -255,7 +265,7 @@ void FLAC__combine_subframe_signals_lossless_to_f32_buffer_32(uint32_t *dest, co
 			uint32_t uval = (val < 0) ? (uint32_t)(-val) : (uint32_t)val;
 			int leading_bit_pos = (int)FLAC__bitmath_ilog2(uval);
 			int shift = leading_bit_pos - 23;
-			uint32_t orig_exp = (uint32_t)base_exp + (uint32_t)leading_bit_pos;
+			uint32_t orig_exp = (uint32_t)base_exp_offset + (uint32_t)leading_bit_pos;
 			uint32_t explicit_mant = (shift >= 0) ? (uint32_t)(uval >> shift) : (uint32_t)(uval << (-shift));
 			uint32_t orig_mant = explicit_mant & 0x7FFFFF;
 			dest[i] = (sign << 31) | (orig_exp << 23) | orig_mant;
@@ -263,9 +273,10 @@ void FLAC__combine_subframe_signals_lossless_to_f32_buffer_32(uint32_t *dest, co
 	}
 }
 
-void FLAC__combine_subframe_signals_lossless_to_f32_buffer(uint32_t *dest, const FLAC__int64 *sig_signal, size_t n, FLAC__byte base_exp)
+void FLAC__combine_subframe_signals_dpa_to_f32_buffer(uint32_t *dest, const FLAC__int32 *delta_signal, const FLAC__int64 *sig_signal, size_t n, FLAC__byte base_exp_offset)
 {
 	size_t i;
+	(void)delta_signal;
 	for (i = 0; i < n; i++) {
 		FLAC__int64 val = sig_signal[i];
 		if (val == 0) {
@@ -275,7 +286,7 @@ void FLAC__combine_subframe_signals_lossless_to_f32_buffer(uint32_t *dest, const
 			uint64_t uval = (val < 0) ? (uint64_t)(-val) : (uint64_t)val;
 			int leading_bit_pos = (int)FLAC__bitmath_ilog2_wide(uval);
 			int shift = leading_bit_pos - 23;
-			uint32_t orig_exp = (uint32_t)base_exp + (uint32_t)leading_bit_pos;
+			uint32_t orig_exp = (uint32_t)base_exp_offset + (uint32_t)leading_bit_pos;
 			uint32_t explicit_mant = (shift >= 0) ? (uint32_t)(uval >> shift) : (uint32_t)(uval << (-shift));
 			uint32_t orig_mant = explicit_mant & 0x7FFFFF;
 			dest[i] = (sign << 31) | (orig_exp << 23) | orig_mant;
@@ -389,27 +400,43 @@ void FLAC__transform_frame_fallback_float(FLAC__int32 *signals[], uint32_t chann
  * Transforms signals into dedicated 64-bit destination for Lossless 1-subframe mode (63 bps):
  *  - converts split_signals[2*ch] / split_signals[2*ch+1] into preprocessed 64-bit two's complement integer in dest_signals[ch]
  */
-void FLAC__transform_frame_lossless_1subframe_float(FLAC__int64 *dest_signals[], const FLAC__int32 * const split_signals[], const uint32_t channel_base_exp[], FLAC__byte exponent_zero_offsets[], uint32_t channels, uint32_t blocksize)
+
+/*
+ * Transforms signals into dedicated DPA mode:
+ *  - delta_signals[2*ch]: 8-bit delta stream Delta_i
+ *  - dest_signals64[2*ch+1]: preprocessed 64-bit aligned integer x_i
+ *  - dest_signals32[2*ch+1]: preprocessed 32-bit aligned integer x_i (if non-NULL)
+ */
+void FLAC__transform_frame_dpa_float(FLAC__int32 *delta_signals[], FLAC__int64 *dest_signals64[], FLAC__int32 *dest_signals32[], const FLAC__int32 * const split_signals[], const uint32_t channel_base_exp[], FLAC__byte exponent_zero_offsets[], uint32_t channels, uint32_t blocksize)
 {
 	uint32_t ch;
 	for (ch = 0; ch < channels; ch++) {
 		uint32_t base_exp = channel_base_exp[ch];
-		FLAC__int64 *sig64 = dest_signals[ch];
+		FLAC__int32 *delta_out = delta_signals[2 * ch];
+		FLAC__int64 *sig64 = dest_signals64 ? dest_signals64[2 * ch + 1] : NULL;
+		FLAC__int32 *sig32 = dest_signals32 ? dest_signals32[2 * ch + 1] : NULL;
 		const FLAC__int32 *exp_in = split_signals[2 * ch];
 		const FLAC__int32 *sm_in = split_signals[2 * ch + 1];
+		uint32_t prev_delta = 0;
 		uint32_t s;
 		for (s = 0; s < blocksize; s++) {
 			uint32_t exp = (uint32_t)exp_in[s] & 0xFF;
 			uint32_t sign_mant = (uint32_t)sm_in[s] & 0xFFFFFF;
 			if (exp == 0 && (sign_mant & 0x7FFFFF) == 0) {
-				sig64[s] = 0;
+				if (sig64) sig64[s] = 0;
+				if (sig32) sig32[s] = 0;
+				delta_out[s] = (FLAC__int32)prev_delta;
 			} else {
 				int shift = ((int)exp - 23) - (int)base_exp;
+				uint32_t cur_delta = (shift > 0) ? (uint32_t)shift : 0;
 				uint64_t explicit_mant = (1ULL << 23) | (uint64_t)(sign_mant & 0x7FFFFF);
 				uint64_t val = (shift >= 0) ? (explicit_mant << shift) : (explicit_mant >> (-shift));
 				uint32_t sign = (sign_mant >> 23) & 1;
 				FLAC__int64 signed_val = sign ? -(FLAC__int64)val : (FLAC__int64)val;
-				sig64[s] = signed_val;
+				if (sig64) sig64[s] = signed_val;
+				if (sig32) sig32[s] = (FLAC__int32)signed_val;
+				delta_out[s] = (FLAC__int32)cur_delta;
+				prev_delta = cur_delta;
 			}
 		}
 		exponent_zero_offsets[ch] = (FLAC__byte)base_exp;
@@ -487,4 +514,314 @@ FLAC__bool FLAC__MD5Accumulate_float(FLAC__MD5Context *ctx, const uint32_t * con
 	FLAC__MD5Update(ctx, buf, (uint32_t)bytes_needed);
 	free(buf);
 	return true;
+}
+
+
+/*
+ * DPA residual normalization routines for coupled audio subframes:
+ * Q_i = r_i >> delta_i
+ */
+void FLAC__normalize_residual_dpa_32(FLAC__int32 residual[], const FLAC__int32 delta[], uint32_t residual_samples, uint32_t order)
+{
+	uint32_t j;
+	for(j = 0; j < residual_samples; j++) {
+		uint32_t d = (uint32_t)delta[order + j];
+		FLAC__int32 r = residual[j];
+		FLAC__int32 q = r >> d;
+		if(d > 0) {
+			FLAC__int32 abs_r = (r < 0) ? -r : r;
+			FLAC__int32 abs_q = (q < 0) ? -q : q;
+			FLAC__ASSERT(abs_q <= abs_r);
+			if(abs_r >= (1 << d))
+				FLAC__ASSERT(abs_q < abs_r);
+		}
+		residual[j] = q;
+	}
+}
+
+void FLAC__normalize_residual_dpa_64(FLAC__int64 residual[], const FLAC__int32 delta[], uint32_t residual_samples, uint32_t order)
+{
+	uint32_t j;
+	for(j = 0; j < residual_samples; j++) {
+		uint32_t d = (uint32_t)delta[order + j];
+		FLAC__int64 r = residual[j];
+		FLAC__int64 q = r >> d;
+		if(d > 0) {
+			int64_t abs_r = (r < 0) ? -r : r;
+			int64_t abs_q = (q < 0) ? -q : q;
+			FLAC__ASSERT(abs_q <= abs_r);
+			if(d < 63 && abs_r >= ((int64_t)1 << d))
+				FLAC__ASSERT(abs_q < abs_r);
+		}
+		residual[j] = q;
+	}
+}
+
+/*
+ * DPA restore signal routines for coupled audio subframes
+ */
+
+void FLAC__fixed_restore_signal_32bit_dpa(const FLAC__int32 residual[], const uint8_t delta[], uint32_t data_len, uint32_t order, FLAC__int32 data[])
+{
+	int i, idata_len = (int)data_len;
+	switch(order) {
+		case 0:
+			for(i = 0; i < idata_len; i++) {
+				uint32_t d = delta[order + i];
+				data[i] = (FLAC__int32)((uint32_t)residual[i] << d);
+			}
+			break;
+		case 1:
+			for(i = 0; i < idata_len; i++) {
+				FLAC__int32 hat_x_i = data[i-1];
+				uint32_t d = delta[order + i];
+				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
+				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
+				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
+			}
+			break;
+		case 2:
+			for(i = 0; i < idata_len; i++) {
+				FLAC__int32 hat_x_i = 2*data[i-1] - data[i-2];
+				uint32_t d = delta[order + i];
+				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
+				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
+				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
+			}
+			break;
+		case 3:
+			for(i = 0; i < idata_len; i++) {
+				FLAC__int32 hat_x_i = 3*data[i-1] - 3*data[i-2] + data[i-3];
+				uint32_t d = delta[order + i];
+				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
+				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
+				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
+			}
+			break;
+		case 4:
+			for(i = 0; i < idata_len; i++) {
+				FLAC__int32 hat_x_i = 4*data[i-1] - 6*data[i-2] + 4*data[i-3] - data[i-4];
+				uint32_t d = delta[order + i];
+				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
+				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
+				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
+			}
+			break;
+		default:
+			FLAC__ASSERT(0);
+	}
+}
+
+void FLAC__fixed_restore_signal_64bit_dpa(const FLAC__int64 residual[], const uint8_t delta[], uint32_t data_len, uint32_t order, FLAC__int64 data[])
+{
+	int i, idata_len = (int)data_len;
+	switch(order) {
+		case 0:
+			for(i = 0; i < idata_len; i++) {
+				uint32_t d = delta[order + i];
+				data[i] = (FLAC__int64)((uint64_t)residual[i] << d);
+			}
+			break;
+		case 1:
+			for(i = 0; i < idata_len; i++) {
+				FLAC__int64 hat_x_i = data[i-1];
+				uint32_t d = delta[order + i];
+				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
+				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
+				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
+			}
+			break;
+		case 2:
+			for(i = 0; i < idata_len; i++) {
+#if FLAC__HAS_INT128
+				FLAC__int64 hat_x_i = (FLAC__int64)(2*(FLAC__int128)data[i-1] - (FLAC__int128)data[i-2]);
+#else
+				FLAC__int64 hat_x_i = (FLAC__int64)(2*(FLAC__uint64)data[i-1] - (FLAC__uint64)data[i-2]);
+#endif
+				uint32_t d = delta[order + i];
+				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
+				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
+				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
+			}
+			break;
+		case 3:
+			for(i = 0; i < idata_len; i++) {
+#if FLAC__HAS_INT128
+				FLAC__int64 hat_x_i = (FLAC__int64)(3*(FLAC__int128)data[i-1] - 3*(FLAC__int128)data[i-2] + (FLAC__int128)data[i-3]);
+#else
+				FLAC__int64 hat_x_i = (FLAC__int64)(3*(FLAC__uint64)data[i-1] - 3*(FLAC__uint64)data[i-2] + (FLAC__uint64)data[i-3]);
+#endif
+				uint32_t d = delta[order + i];
+				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
+				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
+				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
+			}
+			break;
+		case 4:
+			for(i = 0; i < idata_len; i++) {
+#if FLAC__HAS_INT128
+				FLAC__int64 hat_x_i = (FLAC__int64)(4*(FLAC__int128)data[i-1] - 6*(FLAC__int128)data[i-2] + 4*(FLAC__int128)data[i-3] - (FLAC__int128)data[i-4]);
+#else
+				FLAC__int64 hat_x_i = (FLAC__int64)(4*(FLAC__uint64)data[i-1] - 6*(FLAC__uint64)data[i-2] + 4*(FLAC__uint64)data[i-3] - (FLAC__uint64)data[i-4]);
+#endif
+				uint32_t d = delta[order + i];
+				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
+				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
+				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
+			}
+			break;
+		default:
+			FLAC__ASSERT(0);
+	}
+}
+
+void FLAC__lpc_restore_signal_32bit_dpa(const FLAC__int32 residual[], const uint8_t delta[], uint32_t data_len, const FLAC__int32 qlp_coeff[], uint32_t order, int lp_quantization, FLAC__int32 data[])
+{
+	int i;
+
+	FLAC__ASSERT(order > 0);
+	FLAC__ASSERT(order <= 32);
+
+	for(i = 0; i < (int)data_len; i++) {
+		FLAC__int64 sum = 0;
+		switch(order) {
+			case 32: sum += (FLAC__int64)qlp_coeff[31] * (FLAC__int64)data[i-32]; /* Falls through. */
+			case 31: sum += (FLAC__int64)qlp_coeff[30] * (FLAC__int64)data[i-31]; /* Falls through. */
+			case 30: sum += (FLAC__int64)qlp_coeff[29] * (FLAC__int64)data[i-30]; /* Falls through. */
+			case 29: sum += (FLAC__int64)qlp_coeff[28] * (FLAC__int64)data[i-29]; /* Falls through. */
+			case 28: sum += (FLAC__int64)qlp_coeff[27] * (FLAC__int64)data[i-28]; /* Falls through. */
+			case 27: sum += (FLAC__int64)qlp_coeff[26] * (FLAC__int64)data[i-27]; /* Falls through. */
+			case 26: sum += (FLAC__int64)qlp_coeff[25] * (FLAC__int64)data[i-26]; /* Falls through. */
+			case 25: sum += (FLAC__int64)qlp_coeff[24] * (FLAC__int64)data[i-25]; /* Falls through. */
+			case 24: sum += (FLAC__int64)qlp_coeff[23] * (FLAC__int64)data[i-24]; /* Falls through. */
+			case 23: sum += (FLAC__int64)qlp_coeff[22] * (FLAC__int64)data[i-23]; /* Falls through. */
+			case 22: sum += (FLAC__int64)qlp_coeff[21] * (FLAC__int64)data[i-22]; /* Falls through. */
+			case 21: sum += (FLAC__int64)qlp_coeff[20] * (FLAC__int64)data[i-21]; /* Falls through. */
+			case 20: sum += (FLAC__int64)qlp_coeff[19] * (FLAC__int64)data[i-20]; /* Falls through. */
+			case 19: sum += (FLAC__int64)qlp_coeff[18] * (FLAC__int64)data[i-19]; /* Falls through. */
+			case 18: sum += (FLAC__int64)qlp_coeff[17] * (FLAC__int64)data[i-18]; /* Falls through. */
+			case 17: sum += (FLAC__int64)qlp_coeff[16] * (FLAC__int64)data[i-17]; /* Falls through. */
+			case 16: sum += (FLAC__int64)qlp_coeff[15] * (FLAC__int64)data[i-16]; /* Falls through. */
+			case 15: sum += (FLAC__int64)qlp_coeff[14] * (FLAC__int64)data[i-15]; /* Falls through. */
+			case 14: sum += (FLAC__int64)qlp_coeff[13] * (FLAC__int64)data[i-14]; /* Falls through. */
+			case 13: sum += (FLAC__int64)qlp_coeff[12] * (FLAC__int64)data[i-13]; /* Falls through. */
+			case 12: sum += (FLAC__int64)qlp_coeff[11] * (FLAC__int64)data[i-12]; /* Falls through. */
+			case 11: sum += (FLAC__int64)qlp_coeff[10] * (FLAC__int64)data[i-11]; /* Falls through. */
+			case 10: sum += (FLAC__int64)qlp_coeff[ 9] * (FLAC__int64)data[i-10]; /* Falls through. */
+			case  9: sum += (FLAC__int64)qlp_coeff[ 8] * (FLAC__int64)data[i- 9]; /* Falls through. */
+			case  8: sum += (FLAC__int64)qlp_coeff[ 7] * (FLAC__int64)data[i- 8]; /* Falls through. */
+			case  7: sum += (FLAC__int64)qlp_coeff[ 6] * (FLAC__int64)data[i- 7]; /* Falls through. */
+			case  6: sum += (FLAC__int64)qlp_coeff[ 5] * (FLAC__int64)data[i- 6]; /* Falls through. */
+			case  5: sum += (FLAC__int64)qlp_coeff[ 4] * (FLAC__int64)data[i- 5]; /* Falls through. */
+			case  4: sum += (FLAC__int64)qlp_coeff[ 3] * (FLAC__int64)data[i- 4]; /* Falls through. */
+			case  3: sum += (FLAC__int64)qlp_coeff[ 2] * (FLAC__int64)data[i- 3]; /* Falls through. */
+			case  2: sum += (FLAC__int64)qlp_coeff[ 1] * (FLAC__int64)data[i- 2]; /* Falls through. */
+			case  1: sum += (FLAC__int64)qlp_coeff[ 0] * (FLAC__int64)data[i- 1];
+		}
+		FLAC__int32 hat_x_i = (FLAC__int32)(sum >> lp_quantization);
+		uint32_t d = delta[order + i];
+		uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
+		uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
+		uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+		data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
+	}
+}
+
+void FLAC__lpc_restore_signal_wide_64bit_res64_dpa(const FLAC__int64 residual[], const uint8_t delta[], uint32_t data_len, const FLAC__int32 qlp_coeff[], uint32_t order, int lp_quantization, FLAC__int64 data[])
+{
+	int i;
+
+	FLAC__ASSERT(order > 0);
+	FLAC__ASSERT(order <= 32);
+
+	for(i = 0; i < (int)data_len; i++) {
+#if FLAC__HAS_INT128
+		FLAC__int128 sum = 0;
+		switch(order) {
+			case 32: sum += (FLAC__int128)qlp_coeff[31] * (FLAC__int128)data[i-32]; /* Falls through. */
+			case 31: sum += (FLAC__int128)qlp_coeff[30] * (FLAC__int128)data[i-31]; /* Falls through. */
+			case 30: sum += (FLAC__int128)qlp_coeff[29] * (FLAC__int128)data[i-30]; /* Falls through. */
+			case 29: sum += (FLAC__int128)qlp_coeff[28] * (FLAC__int128)data[i-29]; /* Falls through. */
+			case 28: sum += (FLAC__int128)qlp_coeff[27] * (FLAC__int128)data[i-28]; /* Falls through. */
+			case 27: sum += (FLAC__int128)qlp_coeff[26] * (FLAC__int128)data[i-27]; /* Falls through. */
+			case 26: sum += (FLAC__int128)qlp_coeff[25] * (FLAC__int128)data[i-26]; /* Falls through. */
+			case 25: sum += (FLAC__int128)qlp_coeff[24] * (FLAC__int128)data[i-25]; /* Falls through. */
+			case 24: sum += (FLAC__int128)qlp_coeff[23] * (FLAC__int128)data[i-24]; /* Falls through. */
+			case 23: sum += (FLAC__int128)qlp_coeff[22] * (FLAC__int128)data[i-23]; /* Falls through. */
+			case 22: sum += (FLAC__int128)qlp_coeff[21] * (FLAC__int128)data[i-22]; /* Falls through. */
+			case 21: sum += (FLAC__int128)qlp_coeff[20] * (FLAC__int128)data[i-21]; /* Falls through. */
+			case 20: sum += (FLAC__int128)qlp_coeff[19] * (FLAC__int128)data[i-20]; /* Falls through. */
+			case 19: sum += (FLAC__int128)qlp_coeff[18] * (FLAC__int128)data[i-19]; /* Falls through. */
+			case 18: sum += (FLAC__int128)qlp_coeff[17] * (FLAC__int128)data[i-18]; /* Falls through. */
+			case 17: sum += (FLAC__int128)qlp_coeff[16] * (FLAC__int128)data[i-17]; /* Falls through. */
+			case 16: sum += (FLAC__int128)qlp_coeff[15] * (FLAC__int128)data[i-16]; /* Falls through. */
+			case 15: sum += (FLAC__int128)qlp_coeff[14] * (FLAC__int128)data[i-15]; /* Falls through. */
+			case 14: sum += (FLAC__int128)qlp_coeff[13] * (FLAC__int128)data[i-14]; /* Falls through. */
+			case 13: sum += (FLAC__int128)qlp_coeff[12] * (FLAC__int128)data[i-13]; /* Falls through. */
+			case 12: sum += (FLAC__int128)qlp_coeff[11] * (FLAC__int128)data[i-12]; /* Falls through. */
+			case 11: sum += (FLAC__int128)qlp_coeff[10] * (FLAC__int128)data[i-11]; /* Falls through. */
+			case 10: sum += (FLAC__int128)qlp_coeff[ 9] * (FLAC__int128)data[i-10]; /* Falls through. */
+			case  9: sum += (FLAC__int128)qlp_coeff[ 8] * (FLAC__int128)data[i- 9]; /* Falls through. */
+			case  8: sum += (FLAC__int128)qlp_coeff[ 7] * (FLAC__int128)data[i- 8]; /* Falls through. */
+			case  7: sum += (FLAC__int128)qlp_coeff[ 6] * (FLAC__int128)data[i- 7]; /* Falls through. */
+			case  6: sum += (FLAC__int128)qlp_coeff[ 5] * (FLAC__int128)data[i- 6]; /* Falls through. */
+			case  5: sum += (FLAC__int128)qlp_coeff[ 4] * (FLAC__int128)data[i- 5]; /* Falls through. */
+			case  4: sum += (FLAC__int128)qlp_coeff[ 3] * (FLAC__int128)data[i- 4]; /* Falls through. */
+			case  3: sum += (FLAC__int128)qlp_coeff[ 2] * (FLAC__int128)data[i- 3]; /* Falls through. */
+			case  2: sum += (FLAC__int128)qlp_coeff[ 1] * (FLAC__int128)data[i- 2]; /* Falls through. */
+			case  1: sum += (FLAC__int128)qlp_coeff[ 0] * (FLAC__int128)data[i- 1];
+		}
+		FLAC__int64 hat_x_i = (FLAC__int64)(sum >> lp_quantization);
+#else
+		FLAC__int64 sum = 0;
+		switch(order) {
+			case 32: sum += (FLAC__int64)qlp_coeff[31] * data[i-32]; /* Falls through. */
+			case 31: sum += (FLAC__int64)qlp_coeff[30] * data[i-31]; /* Falls through. */
+			case 30: sum += (FLAC__int64)qlp_coeff[29] * data[i-30]; /* Falls through. */
+			case 29: sum += (FLAC__int64)qlp_coeff[28] * data[i-29]; /* Falls through. */
+			case 28: sum += (FLAC__int64)qlp_coeff[27] * data[i-28]; /* Falls through. */
+			case 27: sum += (FLAC__int64)qlp_coeff[26] * data[i-27]; /* Falls through. */
+			case 26: sum += (FLAC__int64)qlp_coeff[25] * data[i-26]; /* Falls through. */
+			case 25: sum += (FLAC__int64)qlp_coeff[24] * data[i-25]; /* Falls through. */
+			case 24: sum += (FLAC__int64)qlp_coeff[23] * data[i-24]; /* Falls through. */
+			case 23: sum += (FLAC__int64)qlp_coeff[22] * data[i-23]; /* Falls through. */
+			case 22: sum += (FLAC__int64)qlp_coeff[21] * data[i-22]; /* Falls through. */
+			case 21: sum += (FLAC__int64)qlp_coeff[20] * data[i-21]; /* Falls through. */
+			case 20: sum += (FLAC__int64)qlp_coeff[19] * data[i-20]; /* Falls through. */
+			case 19: sum += (FLAC__int64)qlp_coeff[18] * data[i-19]; /* Falls through. */
+			case 18: sum += (FLAC__int64)qlp_coeff[17] * data[i-18]; /* Falls through. */
+			case 17: sum += (FLAC__int64)qlp_coeff[16] * data[i-17]; /* Falls through. */
+			case 16: sum += (FLAC__int64)qlp_coeff[15] * data[i-16]; /* Falls through. */
+			case 15: sum += (FLAC__int64)qlp_coeff[14] * data[i-15]; /* Falls through. */
+			case 14: sum += (FLAC__int64)qlp_coeff[13] * data[i-14]; /* Falls through. */
+			case 13: sum += (FLAC__int64)qlp_coeff[12] * data[i-13]; /* Falls through. */
+			case 12: sum += (FLAC__int64)qlp_coeff[11] * data[i-12]; /* Falls through. */
+			case 11: sum += (FLAC__int64)qlp_coeff[10] * data[i-11]; /* Falls through. */
+			case 10: sum += (FLAC__int64)qlp_coeff[ 9] * data[i-10]; /* Falls through. */
+			case  9: sum += (FLAC__int64)qlp_coeff[ 8] * data[i- 9]; /* Falls through. */
+			case  8: sum += (FLAC__int64)qlp_coeff[ 7] * data[i- 8]; /* Falls through. */
+			case  7: sum += (FLAC__int64)qlp_coeff[ 6] * data[i- 7]; /* Falls through. */
+			case  6: sum += (FLAC__int64)qlp_coeff[ 5] * data[i- 6]; /* Falls through. */
+			case  5: sum += (FLAC__int64)qlp_coeff[ 4] * data[i- 5]; /* Falls through. */
+			case  4: sum += (FLAC__int64)qlp_coeff[ 3] * data[i- 4]; /* Falls through. */
+			case  3: sum += (FLAC__int64)qlp_coeff[ 2] * data[i- 3]; /* Falls through. */
+			case  2: sum += (FLAC__int64)qlp_coeff[ 1] * data[i- 2]; /* Falls through. */
+			case  1: sum += (FLAC__int64)qlp_coeff[ 0] * data[i- 1];
+		}
+		FLAC__int64 hat_x_i = (FLAC__int64)(sum >> lp_quantization);
+#endif
+		uint32_t d = delta[order + i];
+		uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
+		uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
+		uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+		data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
+	}
 }

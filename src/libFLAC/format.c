@@ -282,6 +282,15 @@ const char* FLAC__get_sample_type_string(FLAC__SampleType sample_type) {
     else
         return "not_specified";
 }
+
+const char* FLAC__get_float_mode_string(FLAC__FloatMode float_mode) {
+    if(float_mode == FLAC__FLOAT_MODE_FALLBACK)
+        return "fallback";
+    else if(float_mode == FLAC__FLOAT_MODE_ALIGNED)
+        return "aligned";
+    else
+        return "unknown";
+}
 #endif
 
 FLAC_API FLAC__bool FLAC__format_blocksize_is_subset(uint32_t blocksize, uint32_t sample_rate)

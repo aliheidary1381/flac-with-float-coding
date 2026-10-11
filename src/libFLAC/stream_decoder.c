@@ -2635,7 +2635,7 @@ FLAC__bool read_frame_(FLAC__StreamDecoder *decoder, FLAC__bool *got_a_frame, FL
 	num_subframes = decoder->private_->frame.header.channels;
 #if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
 	if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT) {
-		num_subframes = (decoder->private_->frame.header.is_fallback) ? (decoder->private_->frame.header.channels * 2) : decoder->private_->frame.header.channels;
+		num_subframes = decoder->private_->frame.header.channels * 2;
 	}
 #endif
 	if(!allocate_output_(decoder, decoder->private_->frame.header.blocksize, num_subframes, decoder->private_->frame.header.bits_per_sample))
@@ -2651,7 +2651,7 @@ FLAC__bool read_frame_(FLAC__StreamDecoder *decoder, FLAC__bool *got_a_frame, FL
 			if(decoder->private_->frame.header.is_fallback) {
 				bps = (channel % 2 == 0) ? 8 : 24;
 			} else {
-				bps = decoder->private_->frame.header.bits_per_sample;
+				bps = (channel % 2 == 0) ? 8 : decoder->private_->frame.header.bits_per_sample;
 			}
 		}
 #endif
@@ -2755,8 +2755,9 @@ FLAC__bool read_frame_(FLAC__StreamDecoder *decoder, FLAC__bool *got_a_frame, FL
 							sf_c += 2;
 						}
 						else {
-							if(channel == sf_c) { sub_bps = decoder->private_->frame.header.bits_per_sample; break; }
-							sf_c += 1;
+							if(channel == sf_c) { sub_bps = 8; break; }
+							if(channel == sf_c + 1) { sub_bps = decoder->private_->frame.header.bits_per_sample; break; }
+							sf_c += 2;
 						}
 					}
 					if(sub_bps <= 32) {
@@ -3467,6 +3468,11 @@ FLAC__bool read_frame_header_(FLAC__StreamDecoder *decoder)
 		}
 	if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT && !decoder->private_->frame.header.is_fallback) {
 			uint32_t ch;
+#if FLAC__HAS_INT128
+			decoder->private_->frame.header.bits_per_sample = 63;
+#else
+			decoder->private_->frame.header.bits_per_sample = 32;
+#endif
 			for(ch = 0; ch < decoder->private_->frame.header.channels; ch++) {
 				if(!FLAC__bitreader_read_raw_uint32(decoder->private_->input, &x, 8))
 					return false;
@@ -3792,6 +3798,28 @@ FLAC__bool read_subframe_fixed_(FLAC__StreamDecoder *decoder, uint32_t channel, 
 
 	/* decode the subframe */
 	if(do_full_decode) {
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT &&
+		   !decoder->private_->frame.header.is_fallback &&
+		   (channel % 2 == 1)) {
+			uint8_t delta[FLAC__MAX_BLOCK_SIZE];
+			uint32_t s;
+			for(s = 0; s < decoder->private_->frame.header.blocksize; s++)
+				delta[s] = (uint8_t)decoder->private_->output[channel - 1][s];
+			if(bps <= 32) {
+				uint32_t i;
+				for(i = 0; i < order; i++)
+					decoder->private_->output[channel][i] = (FLAC__int32)subframe->warmup[i];
+				FLAC__fixed_restore_signal_32bit_dpa(decoder->private_->residual[channel], delta, decoder->private_->frame.header.blocksize-order, order, decoder->private_->output[channel]+order);
+			}
+			else if(bps <= 64) {
+				FLAC__int64 *output = decoder->private_->output64[channel];
+				memcpy(output, subframe->warmup, sizeof(FLAC__int64) * order);
+				FLAC__fixed_restore_signal_64bit_dpa(decoder->private_->residual64[channel], delta, decoder->private_->frame.header.blocksize-order, order, output+order);
+			}
+		}
+		else
+#endif
 		if(bps <= 32){
 			uint32_t i;
 			for(i = 0; i < order; i++)
@@ -3957,6 +3985,28 @@ FLAC__bool read_subframe_lpc_(FLAC__StreamDecoder *decoder, uint32_t channel, ui
 
 	/* decode the subframe */
 	if(do_full_decode) {
+#if ENABLE_EXPERIMENTAL_FLOAT_SAMPLE_CODING
+		if(decoder->private_->frame.header.sample_type == FLAC__SAMPLE_TYPE_FLOAT &&
+		   !decoder->private_->frame.header.is_fallback &&
+		   (channel % 2 == 1)) {
+			uint8_t delta[FLAC__MAX_BLOCK_SIZE];
+			uint32_t s;
+			for(s = 0; s < decoder->private_->frame.header.blocksize; s++)
+				delta[s] = (uint8_t)decoder->private_->output[channel - 1][s];
+			if(bps <= 32) {
+				uint32_t i;
+				for(i = 0; i < order; i++)
+					decoder->private_->output[channel][i] = (FLAC__int32)subframe->warmup[i];
+				FLAC__lpc_restore_signal_32bit_dpa(decoder->private_->residual[channel], delta, decoder->private_->frame.header.blocksize-order, subframe->qlp_coeff, order, subframe->quantization_level, decoder->private_->output[channel]+order);
+			}
+			else if(bps <= 64) {
+				FLAC__int64 *output = decoder->private_->output64[channel];
+				memcpy(output, subframe->warmup, sizeof(FLAC__int64) * order);
+				FLAC__lpc_restore_signal_wide_64bit_res64_dpa(decoder->private_->residual64[channel], delta, decoder->private_->frame.header.blocksize-order, subframe->qlp_coeff, order, subframe->quantization_level, output+order);
+			}
+		}
+		else
+#endif
 		if(bps <= 32){
 			uint32_t i;
 			for(i = 0; i < order; i++)
@@ -4510,9 +4560,9 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 					}
 					else {
 						if(frame->header.bits_per_sample <= 32)
-							FLAC__combine_subframe_signals_lossless_to_f32_buffer_32((uint32_t *)decoder->private_->output[channel], decoder->private_->output[channel], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
+							FLAC__combine_subframe_signals_dpa_to_f32_buffer_32((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], decoder->private_->output[2*channel+1], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
 						else
-							FLAC__combine_subframe_signals_lossless_to_f32_buffer((uint32_t *)decoder->private_->output[channel], (const FLAC__int64 *)decoder->private_->output64[channel], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
+							FLAC__combine_subframe_signals_dpa_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], (const FLAC__int64 *)decoder->private_->output64[2*channel+1], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
 					}
 				}
 			}
@@ -4586,10 +4636,11 @@ FLAC__StreamDecoderWriteStatus write_audio_frame_to_client_(FLAC__StreamDecoder 
 					FLAC__combine_subframe_signals_fallback_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], decoder->private_->output[2*channel+1], frame->header.blocksize);
 				}
 				else {
+
 					if(frame->header.bits_per_sample <= 32)
-						FLAC__combine_subframe_signals_lossless_to_f32_buffer_32((uint32_t *)decoder->private_->output[channel], decoder->private_->output[channel], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
+						FLAC__combine_subframe_signals_dpa_to_f32_buffer_32((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], decoder->private_->output[2*channel+1], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
 					else
-						FLAC__combine_subframe_signals_lossless_to_f32_buffer((uint32_t *)decoder->private_->output[channel], (const FLAC__int64 *)decoder->private_->output64[channel], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
+						FLAC__combine_subframe_signals_dpa_to_f32_buffer((uint32_t *)decoder->private_->output[channel], decoder->private_->output[2*channel], (const FLAC__int64 *)decoder->private_->output64[2*channel+1], frame->header.blocksize, frame->header.exponent_zero_offsets[channel]);
 				}
 			}
 		}

@@ -207,6 +207,13 @@ typedef enum { FLAC__SAMPLE_TYPE_NOT_SPECIFIED = -1,
 			   FLAC__SAMPLE_TYPE_INT = 0,
 			   FLAC__SAMPLE_TYPE_FLOAT = 1 } FLAC__SampleType; // TODO: merge with endian & unsigned
 
+/** An enumeration of the float coding modes. */
+typedef enum {
+	FLAC__FLOAT_MODE_UNKNOWN = -1,
+	FLAC__FLOAT_MODE_FALLBACK = 0,
+	FLAC__FLOAT_MODE_ALIGNED = 1
+} FLAC__FloatMode;
+
 /*****************************************************************************
  *
  * Subframe structures
@@ -1071,6 +1078,15 @@ FLAC_API FLAC__bool FLAC__format_sample_rate_is_valid_extension(FLAC__float64 sa
  *    if it's FLAC__SAMPLE_TYPE_INT, else \c "not_specified".
  */
 FLAC_API const char* FLAC__get_sample_type_string(FLAC__SampleType sample_type);
+
+/** Returns the corresponding string to the float mode.
+ *
+ * \param float_mode     The float mode.
+ * \retval const char*
+ *    \c "fallback" if FLAC__FLOAT_MODE_FALLBACK, \c "aligned" if
+ *    \c FLAC__FLOAT_MODE_ALIGNED, else \c "unknown".
+ */
+FLAC_API const char* FLAC__get_float_mode_string(FLAC__FloatMode float_mode);
 #endif
 
 /** Tests that a blocksize at the given sample rate is valid for the FLAC
