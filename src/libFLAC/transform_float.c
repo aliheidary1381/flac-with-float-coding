@@ -427,9 +427,12 @@ void FLAC__transform_frame_dpa_float(FLAC__int32 *delta_signals[], FLAC__int64 *
 				if (sig32) sig32[s] = 0;
 				delta_out[s] = (FLAC__int32)prev_delta;
 			} else {
+				uint32_t explicit_mant32 = (1u << 23) | (sign_mant & 0x7FFFFF);
+				int tz = flac_ctz32(explicit_mant32);
 				int shift = ((int)exp - 23) - (int)base_exp;
-				uint32_t cur_delta = (shift > 0) ? (uint32_t)shift : 0;
-				uint64_t explicit_mant = (1ULL << 23) | (uint64_t)(sign_mant & 0x7FFFFF);
+				int delta_val = ((int)exp - 23 + tz) - (int)base_exp;
+				uint32_t cur_delta = (delta_val > 0) ? (uint32_t)delta_val : 0;
+				uint64_t explicit_mant = (uint64_t)explicit_mant32;
 				uint64_t val = (shift >= 0) ? (explicit_mant << shift) : (explicit_mant >> (-shift));
 				uint32_t sign = (sign_mant >> 23) & 1;
 				FLAC__int64 signed_val = sign ? -(FLAC__int64)val : (FLAC__int64)val;
@@ -527,12 +530,12 @@ void FLAC__normalize_residual_dpa_32(FLAC__int32 residual[], const FLAC__int32 d
 	for(j = 0; j < residual_samples; j++) {
 		uint32_t d = (uint32_t)delta[order + j];
 		FLAC__int32 r = residual[j];
-		FLAC__int32 q = r >> d;
+		FLAC__int32 q = (d < 32) ? (r >> d) : (r < 0 ? -1 : 0);
 		if(d > 0) {
 			FLAC__int32 abs_r = (r < 0) ? -r : r;
 			FLAC__int32 abs_q = (q < 0) ? -q : q;
 			FLAC__ASSERT(abs_q <= abs_r);
-			if(abs_r >= (1 << d))
+			if(d < 31 && abs_r >= (1 << d))
 				FLAC__ASSERT(abs_q < abs_r);
 		}
 		residual[j] = q;
@@ -545,7 +548,7 @@ void FLAC__normalize_residual_dpa_64(FLAC__int64 residual[], const FLAC__int32 d
 	for(j = 0; j < residual_samples; j++) {
 		uint32_t d = (uint32_t)delta[order + j];
 		FLAC__int64 r = residual[j];
-		FLAC__int64 q = r >> d;
+		FLAC__int64 q = (d < 64) ? (r >> d) : (r < 0 ? -1 : 0);
 		if(d > 0) {
 			int64_t abs_r = (r < 0) ? -r : r;
 			int64_t abs_q = (q < 0) ? -q : q;
@@ -564,50 +567,51 @@ void FLAC__normalize_residual_dpa_64(FLAC__int64 residual[], const FLAC__int32 d
 void FLAC__fixed_restore_signal_32bit_dpa(const FLAC__int32 residual[], const uint8_t delta[], uint32_t data_len, uint32_t order, FLAC__int32 data[])
 {
 	int i, idata_len = (int)data_len;
+	uint32_t d, mask, R_i, r_i;
 	switch(order) {
 		case 0:
 			for(i = 0; i < idata_len; i++) {
-				uint32_t d = delta[order + i];
-				data[i] = (FLAC__int32)((uint32_t)residual[i] << d);
+				d = delta[order + i];
+				data[i] = (d < 32) ? (FLAC__int32)((uint32_t)residual[i] << d) : 0;
 			}
 			break;
 		case 1:
 			for(i = 0; i < idata_len; i++) {
 				FLAC__int32 hat_x_i = data[i-1];
-				uint32_t d = delta[order + i];
-				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
-				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
-				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 32) ? UINT32_MAX : ((d > 0) ? (((uint32_t)1 << d) - 1) : 0);
+				R_i = (-(uint32_t)hat_x_i) & mask;
+				r_i = (d < 32) ? (((uint32_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
 			}
 			break;
 		case 2:
 			for(i = 0; i < idata_len; i++) {
 				FLAC__int32 hat_x_i = 2*data[i-1] - data[i-2];
-				uint32_t d = delta[order + i];
-				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
-				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
-				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 32) ? UINT32_MAX : ((d > 0) ? (((uint32_t)1 << d) - 1) : 0);
+				R_i = (-(uint32_t)hat_x_i) & mask;
+				r_i = (d < 32) ? (((uint32_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
 			}
 			break;
 		case 3:
 			for(i = 0; i < idata_len; i++) {
 				FLAC__int32 hat_x_i = 3*data[i-1] - 3*data[i-2] + data[i-3];
-				uint32_t d = delta[order + i];
-				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
-				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
-				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 32) ? UINT32_MAX : ((d > 0) ? (((uint32_t)1 << d) - 1) : 0);
+				R_i = (-(uint32_t)hat_x_i) & mask;
+				r_i = (d < 32) ? (((uint32_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
 			}
 			break;
 		case 4:
 			for(i = 0; i < idata_len; i++) {
 				FLAC__int32 hat_x_i = 4*data[i-1] - 6*data[i-2] + 4*data[i-3] - data[i-4];
-				uint32_t d = delta[order + i];
-				uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
-				uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
-				uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 32) ? UINT32_MAX : ((d > 0) ? (((uint32_t)1 << d) - 1) : 0);
+				R_i = (-(uint32_t)hat_x_i) & mask;
+				r_i = (d < 32) ? (((uint32_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
 			}
 			break;
@@ -619,20 +623,22 @@ void FLAC__fixed_restore_signal_32bit_dpa(const FLAC__int32 residual[], const ui
 void FLAC__fixed_restore_signal_64bit_dpa(const FLAC__int64 residual[], const uint8_t delta[], uint32_t data_len, uint32_t order, FLAC__int64 data[])
 {
 	int i, idata_len = (int)data_len;
+	uint32_t d;
+	uint64_t mask, R_i, r_i;
 	switch(order) {
 		case 0:
 			for(i = 0; i < idata_len; i++) {
-				uint32_t d = delta[order + i];
-				data[i] = (FLAC__int64)((uint64_t)residual[i] << d);
+				d = delta[order + i];
+				data[i] = (d < 64) ? (FLAC__int64)((uint64_t)residual[i] << d) : 0;
 			}
 			break;
 		case 1:
 			for(i = 0; i < idata_len; i++) {
 				FLAC__int64 hat_x_i = data[i-1];
-				uint32_t d = delta[order + i];
-				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
-				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
-				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 64) ? UINT64_MAX : ((d > 0) ? (((uint64_t)1 << d) - 1) : 0);
+				R_i = (-(uint64_t)hat_x_i) & mask;
+				r_i = (d < 64) ? (((uint64_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
 			}
 			break;
@@ -643,10 +649,10 @@ void FLAC__fixed_restore_signal_64bit_dpa(const FLAC__int64 residual[], const ui
 #else
 				FLAC__int64 hat_x_i = (FLAC__int64)(2*(FLAC__uint64)data[i-1] - (FLAC__uint64)data[i-2]);
 #endif
-				uint32_t d = delta[order + i];
-				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
-				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
-				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 64) ? UINT64_MAX : ((d > 0) ? (((uint64_t)1 << d) - 1) : 0);
+				R_i = (-(uint64_t)hat_x_i) & mask;
+				r_i = (d < 64) ? (((uint64_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
 			}
 			break;
@@ -657,10 +663,10 @@ void FLAC__fixed_restore_signal_64bit_dpa(const FLAC__int64 residual[], const ui
 #else
 				FLAC__int64 hat_x_i = (FLAC__int64)(3*(FLAC__uint64)data[i-1] - 3*(FLAC__uint64)data[i-2] + (FLAC__uint64)data[i-3]);
 #endif
-				uint32_t d = delta[order + i];
-				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
-				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
-				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 64) ? UINT64_MAX : ((d > 0) ? (((uint64_t)1 << d) - 1) : 0);
+				R_i = (-(uint64_t)hat_x_i) & mask;
+				r_i = (d < 64) ? (((uint64_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
 			}
 			break;
@@ -671,10 +677,10 @@ void FLAC__fixed_restore_signal_64bit_dpa(const FLAC__int64 residual[], const ui
 #else
 				FLAC__int64 hat_x_i = (FLAC__int64)(4*(FLAC__uint64)data[i-1] - 6*(FLAC__uint64)data[i-2] + 4*(FLAC__uint64)data[i-3] - (FLAC__uint64)data[i-4]);
 #endif
-				uint32_t d = delta[order + i];
-				uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
-				uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
-				uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+				d = delta[order + i];
+				mask = (d >= 64) ? UINT64_MAX : ((d > 0) ? (((uint64_t)1 << d) - 1) : 0);
+				R_i = (-(uint64_t)hat_x_i) & mask;
+				r_i = (d < 64) ? (((uint64_t)residual[i] << d) | R_i) : R_i;
 				data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
 			}
 			break;
@@ -686,6 +692,8 @@ void FLAC__fixed_restore_signal_64bit_dpa(const FLAC__int64 residual[], const ui
 void FLAC__lpc_restore_signal_32bit_dpa(const FLAC__int32 residual[], const uint8_t delta[], uint32_t data_len, const FLAC__int32 qlp_coeff[], uint32_t order, int lp_quantization, FLAC__int32 data[])
 {
 	int i;
+	FLAC__int32 hat_x_i;
+	uint32_t d, mask, R_i, r_i;
 
 	FLAC__ASSERT(order > 0);
 	FLAC__ASSERT(order <= 32);
@@ -726,11 +734,11 @@ void FLAC__lpc_restore_signal_32bit_dpa(const FLAC__int32 residual[], const uint
 			case  2: sum += (FLAC__int64)qlp_coeff[ 1] * (FLAC__int64)data[i- 2]; /* Falls through. */
 			case  1: sum += (FLAC__int64)qlp_coeff[ 0] * (FLAC__int64)data[i- 1];
 		}
-		FLAC__int32 hat_x_i = (FLAC__int32)(sum >> lp_quantization);
-		uint32_t d = delta[order + i];
-		uint32_t mask = (d > 0) ? (((uint32_t)1 << d) - 1) : 0;
-		uint32_t R_i = (-(uint32_t)hat_x_i) & mask;
-		uint32_t r_i = ((uint32_t)residual[i] << d) | R_i;
+		hat_x_i = (FLAC__int32)(sum >> lp_quantization);
+		d = delta[order + i];
+		mask = (d >= 32) ? UINT32_MAX : ((d > 0) ? (((uint32_t)1 << d) - 1) : 0);
+		R_i = (-(uint32_t)hat_x_i) & mask;
+		r_i = (d < 32) ? (((uint32_t)residual[i] << d) | R_i) : R_i;
 		data[i] = (FLAC__int32)((uint32_t)hat_x_i + r_i);
 	}
 }
@@ -738,6 +746,9 @@ void FLAC__lpc_restore_signal_32bit_dpa(const FLAC__int32 residual[], const uint
 void FLAC__lpc_restore_signal_wide_64bit_res64_dpa(const FLAC__int64 residual[], const uint8_t delta[], uint32_t data_len, const FLAC__int32 qlp_coeff[], uint32_t order, int lp_quantization, FLAC__int64 data[])
 {
 	int i;
+	FLAC__int64 hat_x_i;
+	uint32_t d;
+	uint64_t mask, R_i, r_i;
 
 	FLAC__ASSERT(order > 0);
 	FLAC__ASSERT(order <= 32);
@@ -779,7 +790,7 @@ void FLAC__lpc_restore_signal_wide_64bit_res64_dpa(const FLAC__int64 residual[],
 			case  2: sum += (FLAC__int128)qlp_coeff[ 1] * (FLAC__int128)data[i- 2]; /* Falls through. */
 			case  1: sum += (FLAC__int128)qlp_coeff[ 0] * (FLAC__int128)data[i- 1];
 		}
-		FLAC__int64 hat_x_i = (FLAC__int64)(sum >> lp_quantization);
+		hat_x_i = (FLAC__int64)(sum >> lp_quantization);
 #else
 		FLAC__int64 sum = 0;
 		switch(order) {
@@ -816,12 +827,12 @@ void FLAC__lpc_restore_signal_wide_64bit_res64_dpa(const FLAC__int64 residual[],
 			case  2: sum += (FLAC__int64)qlp_coeff[ 1] * data[i- 2]; /* Falls through. */
 			case  1: sum += (FLAC__int64)qlp_coeff[ 0] * data[i- 1];
 		}
-		FLAC__int64 hat_x_i = (FLAC__int64)(sum >> lp_quantization);
+		hat_x_i = (FLAC__int64)(sum >> lp_quantization);
 #endif
-		uint32_t d = delta[order + i];
-		uint64_t mask = (d > 0) ? (((uint64_t)1 << d) - 1) : 0;
-		uint64_t R_i = (-(uint64_t)hat_x_i) & mask;
-		uint64_t r_i = ((uint64_t)residual[i] << d) | R_i;
+		d = delta[order + i];
+		mask = (d >= 64) ? UINT64_MAX : ((d > 0) ? (((uint64_t)1 << d) - 1) : 0);
+		R_i = (-(uint64_t)hat_x_i) & mask;
+		r_i = (d < 64) ? (((uint64_t)residual[i] << d) | R_i) : R_i;
 		data[i] = (FLAC__int64)((FLAC__uint64)hat_x_i + r_i);
 	}
 }
