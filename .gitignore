@@ -1,0 +1,14 @@
+# LaTeX auxiliary & build artifacts
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.log
+*.out
+*.run.xml
+
+# direnv & Nix
+.direnv/
+
+# fetched audio corpus
+corpus/

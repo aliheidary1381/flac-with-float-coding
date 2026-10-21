@@ -1,0 +1,5 @@
+Signal,FLAC_DPA,FLAC_Fallback,WavPack,Monkeys,MP4ALS,OptimFROG,Diff_vs_WavPack,Diff_CI90_Margin,Diff_CI90_Low,Diff_CI90_High,t_stat,p_val
+{exponent_staircase},74.87,74.87,90.74,71.94,55.05,82.82,-15.87,0.00,-15.87,-15.87,0.00,1.0000e+00
+{seismic_ringdown},81.52,81.52,93.59,87.53,90.31,83.16,-12.07,0.00,-12.07,-12.07,0.00,1.0000e+00
+{sensor_dropout_nans},77.92,77.92,52.24,229.68,48.87,44.07,+25.68,0.00,+25.68,+25.68,0.00,1.0000e+00
+{Macro-Mean},78.10,78.10,78.86,129.72,64.74,70.02,-0.75,38.73,-39.48,+37.97,-0.06,9.5987e-01

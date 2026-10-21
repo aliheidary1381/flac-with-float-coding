@@ -1,0 +1,15 @@
+Tier,Format,Rate,Simulation,Fallback,Raw,OneSubframe,CyclicShift,BitManip,DPA_SNP,DPA,DPA_CI90_Margin
+{Tier 1: Canonical},{16-bit PCM},{<=48kHz},{Dual-Stage ADC},32.74,37.60,14.85,64.52,36.91,21.21,24.18,1.08
+{Tier 1: Canonical},{16-bit PCM},{<=48kHz},{Complex DAW},64.24,72.30,64.31,71.53,61.97,63.10,54.46,1.55
+{Tier 1: Canonical},{16-bit PCM},{>48kHz},{Dual-Stage ADC},0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00
+{Tier 1: Canonical},{16-bit PCM},{>48kHz},{Complex DAW},0.00,0.00,0.00,0.00,0.00,0.00,0.00,0.00
+{Tier 1: Canonical},{24-bit PCM},{>48kHz},{Dual-Stage ADC},64.01,69.09,35.37,79.63,70.43,43.32,35.52,0.25
+{Tier 1: Canonical},{24-bit PCM},{>48kHz},{Complex DAW},74.59,93.38,74.55,89.48,73.30,68.16,54.97,0.24
+{Tier 2: Stratified Music},{16-bit PCM},{<=48kHz},{Dual-Stage ADC},49.30,58.48,32.30,85.39,59.90,40.16,34.43,1.06
+{Tier 2: Stratified Music},{16-bit PCM},{<=48kHz},{Complex DAW},79.12,93.73,79.08,89.64,78.59,82.02,70.71,1.23
+{Tier 2: Stratified Music},{24-bit PCM},{<=48kHz},{Dual-Stage ADC},72.75,79.93,55.62,84.71,81.78,63.37,55.84,8.76
+{Tier 2: Stratified Music},{24-bit PCM},{<=48kHz},{Complex DAW},78.20,94.27,78.20,89.83,77.29,80.52,69.65,5.67
+{Tier 2: Stratified Music},{24-bit PCM},{>48kHz},{Dual-Stage ADC},68.23,70.01,43.10,78.81,73.05,51.00,44.11,2.93
+{Tier 2: Stratified Music},{24-bit PCM},{>48kHz},{Complex DAW},74.84,89.33,74.94,88.46,71.58,71.27,60.15,2.03
+{Tier 2: Stratified Music},{Tier 2 Macro-Mean},{All Rates},{Dual-Stage ADC},58.27,64.66,38.42,83.02,66.69,46.27,39.96,2.24
+{Tier 2: Stratified Music},{Tier 2 Macro-Mean},{All Rates},{Complex DAW},77.53,92.25,77.54,89.25,76.01,78.11,66.91,1.67

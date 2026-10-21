@@ -1,0 +1,16 @@
+Simulation,Codec,EncSpeed,DecSpeed
+{Dual-Stage ADC},"{FLAC Float (Ours, -5)}",167.1,159.2
+{Dual-Stage ADC},{WavPack (Default)},58.8,113.9
+{Dual-Stage ADC},{Monkey's Audio (-c2000)},32.4,30.7
+{Dual-Stage ADC},{MPEG-4 ALS (Default)},19.6,65.3
+{Dual-Stage ADC},{OptimFROG (Default)},17.7,26.2
+{Complex DAW Master},"{FLAC Float (Ours, -5)}",111.1,97.6
+{Complex DAW Master},{WavPack (Default)},51.0,100.6
+{Complex DAW Master},{Monkey's Audio (-c2000)},33.2,32.5
+{Complex DAW Master},{OptimFROG (Default)},16.5,23.1
+{Complex DAW Master},{MPEG-4 ALS (Default)},4.8,56.3
+{Complex DAW Master},"{FLAC Float (Ours, -5)}",186.0,249.9
+{Complex DAW Master},{WavPack (Default)},121.1,375.6
+{Complex DAW Master},{Monkey's Audio (-c2000)},66.4,71.9
+{Complex DAW Master},{OptimFROG (Default)},40.3,82.3
+{Complex DAW Master},{MPEG-4 ALS (Default)},7.3,142.7

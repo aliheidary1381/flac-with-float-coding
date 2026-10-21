@@ -1,0 +1,15 @@
+Tier,Format,Rate,Simulation,FLAC,FLAC_CI90_Margin,WavPack,Monkeys,MP4ALS,OptimFROG,Diff_vs_WavPack,Diff_CI90_Margin,Diff_CI90_Low,Diff_CI90_High,t_stat,p_val,FLAC_Min,FLAC_Max
+{Tier 1: Canonical},{16-bit PCM},{<=48kHz},{Dual-Stage ADC},24.18,1.08,14.11,75.70,12.67,12.22,+10.07,0.72,+9.35,+10.79,+23.27,2.1910e-34,9.27,41.67
+{Tier 1: Canonical},{16-bit PCM},{<=48kHz},{Complex DAW},54.46,1.55,51.01,68.74,50.07,50.31,+3.46,1.04,+2.41,+4.50,+5.53,5.3154e-07,28.45,82.88
+{Tier 1: Canonical},{16-bit PCM},{>48kHz},{Dual-Stage ADC},0.00,0.00,0.00,0.00,0.00,0.00,+0.00,0.00,+0.00,+0.00,+0.00,1.0000e+00,0.00,0.00
+{Tier 1: Canonical},{16-bit PCM},{>48kHz},{Complex DAW},0.00,0.00,0.00,0.00,0.00,0.00,+0.00,0.00,+0.00,+0.00,+0.00,1.0000e+00,0.00,0.00
+{Tier 1: Canonical},{24-bit PCM},{>48kHz},{Dual-Stage ADC},35.52,0.25,35.20,87.51,34.57,35.28,+0.32,0.01,+0.31,+0.33,+40.52,9.3787e-28,34.19,36.87
+{Tier 1: Canonical},{24-bit PCM},{>48kHz},{Complex DAW},54.97,0.24,54.47,83.06,54.77,54.16,+0.50,0.07,+0.43,+0.57,+12.15,4.1276e-13,54.06,57.40
+{Tier 2: Stratified Music},{16-bit PCM},{<=48kHz},{Dual-Stage ADC},34.43,1.06,30.78,104.48,30.43,29.78,+3.65,0.55,+3.11,+4.20,+11.50,1.5921e-10,29.90,40.76
+{Tier 2: Stratified Music},{16-bit PCM},{<=48kHz},{Complex DAW},70.71,1.23,68.61,81.80,68.37,67.83,+2.10,0.44,+1.67,+2.54,+8.25,5.0363e-08,65.98,78.60
+{Tier 2: Stratified Music},{24-bit PCM},{<=48kHz},{Dual-Stage ADC},55.84,8.76,54.01,97.36,53.14,53.08,+1.83,1.11,+0.72,+2.94,+3.89,3.0079e-02,45.40,62.97
+{Tier 2: Stratified Music},{24-bit PCM},{<=48kHz},{Complex DAW},69.65,5.67,67.59,80.62,67.36,66.66,+2.06,1.73,+0.33,+3.79,+2.81,6.7346e-02,64.84,74.53
+{Tier 2: Stratified Music},{24-bit PCM},{>48kHz},{Dual-Stage ADC},44.11,2.93,40.87,89.81,40.36,40.70,+3.23,2.60,+0.63,+5.83,+2.20,4.6285e-02,34.22,52.93
+{Tier 2: Stratified Music},{24-bit PCM},{>48kHz},{Complex DAW},60.15,2.03,57.57,78.19,57.92,57.13,+2.58,2.65,-0.08,+5.23,+1.72,1.0910e-01,51.38,67.37
+{Tier 2: Stratified Music},{Tier 2 Macro-Mean},{All Rates},{Dual-Stage ADC},39.96,2.24,36.63,98.63,36.17,35.93,+3.32,0.91,+2.42,+4.23,+6.17,3.0059e-07,29.90,62.97
+{Tier 2: Stratified Music},{Tier 2 Macro-Mean},{All Rates},{Complex DAW},66.91,1.67,64.64,80.42,64.61,63.97,+2.27,0.90,+1.36,+3.17,+4.23,1.3629e-04,51.38,78.60

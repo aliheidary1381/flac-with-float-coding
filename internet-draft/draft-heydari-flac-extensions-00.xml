@@ -1,0 +1,807 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- name="GENERATOR" content="github.com/mmarkdown/mmark Mmark Markdown Processor - mmark.miek.nl" -->
+<rfc version="3" ipr="trust200902" docName="draft-heydari-flac-extensions-00" submissionType="IETF" category="std" xml:lang="en" xmlns:xi="http://www.w3.org/2001/XInclude" indexInclude="true" consensus="true">
+
+<front>
+<title abbrev="FLAC Extensions">Proposed Extensions to the FLAC Standard</title><seriesInfo value="draft-heydari-flac-extensions-00" stream="IETF" status="standard" name="Internet-Draft"></seriesInfo>
+<author initials="A." surname="Heydari" fullname="Ali Heydari"><organization>Independent</organization><address><postal><street></street>
+</postal><email>aliheidary1381@gmail.com</email>
+</address></author><date/>
+<area>General</area>
+<workgroup>Network Working Group</workgroup>
+<keyword>FLAC</keyword>
+<keyword>floating-point</keyword>
+<keyword>audio coding</keyword>
+<keyword>lossless compression</keyword>
+<keyword>Rice coding</keyword>
+
+<abstract>
+<t>This document specifies extensions to the Free Lossless Audio Codec (FLAC) format defined in RFC 9639 <xref target="RFC9639"></xref>. These additions specify:</t>
+
+<ol spacing="compact">
+<li>A new metadata block (<tt>STREAMINFO_EXTENSION</tt>, block type 7) supporting 64-bit IEEE 754 double-precision floating-point sample rates, up to 256 audio channels, standard <tt>WAVEFORMATEXTENSIBLE</tt> channel masks, extended bit depths up to 128 bits per sample, and explicit sample format indicators (integer PCM and IEEE 754 32-bit floating-point PCM).</li>
+<li>An extended frame header operating in either Compact (8-bit payload) or Full (128-bit payload) mode, accompanied by deliberate backward-incompatibility signaling in legacy frame header fields.</li>
+<li>An extended entropy coding method, <tt>PARTITIONED_RICE3</tt> (type code <tt>0b10</tt>), employing 7-bit Rice parameters and 7-bit raw escape bit lengths to accommodate residuals of ultra-high bit depths (up to 128 bits per sample).</li>
+<li>A native IEEE 754 single-precision (32-bit) floating-point sample coding architecture utilizing dual subframes per audio channel, encompassing Dynamic Positional Alignment (DPA) and two's complement Fallback modes.</li>
+<li>A new subframe type, <tt>PACKED</tt> (type code <tt>0b000010</tt>), providing adaptive-width bit-packed storage for lower-order mantissa bits and raw float outlier samples.</li>
+</ol>
+</abstract>
+
+</front>
+
+<middle>
+
+<section anchor="conventions"><name>Conventions and Requirements Language</name>
+<t>The key words &quot;<bcp14>MUST</bcp14>&quot;, &quot;<bcp14>MUST NOT</bcp14>&quot;, &quot;<bcp14>REQUIRED</bcp14>&quot;, &quot;<bcp14>SHALL</bcp14>&quot;, &quot;<bcp14>SHALL NOT</bcp14>&quot;, &quot;<bcp14>SHOULD</bcp14>&quot;, &quot;<bcp14>SHOULD NOT</bcp14>&quot;, &quot;<bcp14>RECOMMENDED</bcp14>&quot;, &quot;<bcp14>NOT RECOMMENDED</bcp14>&quot;, &quot;<bcp14>MAY</bcp14>&quot;, and &quot;<bcp14>OPTIONAL</bcp14>&quot; in this document are to be interpreted as described in BCP 14 <xref target="RFC2119"></xref> <xref target="RFC8174"></xref> when, and only when, they appear in all capitals, as shown here.</t>
+</section>
+
+<section anchor="deliberate-incompatibility"><name>Deliberate Incompatibility and Signaling Strategy</name>
+<t>Because extended streams may contain floating-point audio, non-integer sample rates, channel configurations up to 256 channels, or extended subframe payloads, feeding such streams to legacy RFC 9639 decoders would produce severe acoustic damage or decoder crashes.</t>
+<t>This specification adopts a two-tier deliberate breaking strategy:</t>
+
+<ol spacing="compact">
+<li><strong>Stream-Level Incompatibility</strong>: The <tt>STREAMINFO</tt> block signals the presence of <tt>STREAMINFO_EXTENSION</tt> by setting its <tt>bits_per_sample</tt> field to <tt>0b00000</tt> (representing 1 bit per sample). In <xref target="RFC9639"></xref>, bit depths below 4 bits per sample are reserved and illegal. Compliant <xref target="RFC9639"></xref> decoders <bcp14>MUST</bcp14> refuse to decode the stream upon encountering this value.</li>
+<li><strong>Frame-Level Incompatibility</strong>: The legacy frame header fields for sample rate, channel assignment, and bit depth are simultaneously set to previously forbidden or reserved codes (<tt>sample_rate = 0b1111</tt>, <tt>channel_assignment = 0b1111</tt>, <tt>bits_per_sample = 0b011</tt>). Furthermore, the frame header extension bytes are inserted immediately before the frame header CRC-8, causing legacy decoders seeking a CRC-8 at the legacy offset to encounter bit-shifted data and fail validation immediately.</li>
+</ol>
+</section>
+
+<section anchor="streaminfo-extension"><name>The STREAMINFO_EXTENSION Metadata Block</name>
+
+<section anchor="block-id-placement"><name>Block Identification and Placement</name>
+<t>The <tt>STREAMINFO_EXTENSION</tt> metadata block is identified by block type indicator <tt>7</tt> in the 7-bit metadata block header:</t>
+<table anchor="tbl-streaminfo-ext-header"><name>STREAMINFO_EXTENSION Block Header </name>
+<thead>
+<tr>
+<th align="left">Bits</th>
+<th align="left">Field Name</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0</tt></td>
+<td align="left">Last-Metadata-Block Flag</td>
+<td align="left"><tt>1</tt> if this is the last metadata block, <tt>0</tt> otherwise</td>
+</tr>
+
+<tr>
+<td align="left"><tt>1..7</tt></td>
+<td align="left">Block Type</td>
+<td align="left"><tt>0b0000111</tt> (7): <tt>STREAMINFO_EXTENSION</tt> block</td>
+</tr>
+
+<tr>
+<td align="left"><tt>8..31</tt></td>
+<td align="left">Length</td>
+<td align="left"><tt>16</tt> (<tt>0x000010</tt>): Payload length in bytes (128 bits)</td>
+</tr>
+</tbody>
+</table><t>If present in a FLAC stream, the <tt>STREAMINFO_EXTENSION</tt> block <bcp14>MUST</bcp14> immediately follow the <tt>STREAMINFO</tt> block (i.e., at metadata block index 1). A stream <bcp14>MUST NOT</bcp14> contain more than one <tt>STREAMINFO_EXTENSION</tt> block.</t>
+</section>
+
+<section anchor="signaling-streaminfo"><name>Signaling in STREAMINFO</name>
+<t>The presence of the <tt>STREAMINFO_EXTENSION</tt> block <bcp14>MUST</bcp14> be indicated in the preceding <tt>STREAMINFO</tt> block by encoding the 5-bit <tt>bits_per_sample</tt> field as <tt>0b00000</tt> (meaning 1 bit per sample).</t>
+<t>If the channel count is higher than <tt>STREAMINFO</tt>'s capacity (greater than 8 channels), <tt>STREAMINFO</tt> <bcp14>MUST</bcp14> store <tt>0b000</tt> bits (representing 1 channel). Otherwise, <tt>STREAMINFO</tt> and <tt>STREAMINFO_EXTENSION</tt> <bcp14>MUST</bcp14> both store the same channel count.</t>
+<t><tt>STREAMINFO</tt>'s sample rate <bcp14>MUST</bcp14> be a rounded integer version of the <tt>STREAMINFO_EXTENSION</tt> sample rate (capped at 1,048,575 = 2^20 - 1 for higher rates).</t>
+</section>
+
+<section anchor="block-syntax-bit-layout"><name>Block Syntax and Bit Layout</name>
+<t>The payload of the <tt>STREAMINFO_EXTENSION</tt> block is exactly 128 bits (16 octets) in length:</t>
+<table anchor="tbl-streaminfo-ext-payload"><name>STREAMINFO_EXTENSION Payload Bit Layout </name>
+<thead>
+<tr>
+<th align="left">Bit Range</th>
+<th align="left">Field Name</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0..63</tt></td>
+<td align="left">Sample Rate</td>
+<td align="left">64 bits representing sample rate in Hz in IEEE 754 binary64 format</td>
+</tr>
+
+<tr>
+<td align="left"><tt>64..71</tt></td>
+<td align="left">Channel Count Minus 1</td>
+<td align="left">8 bits for <tt>(number of channels) - 1</tt> (values 0..255 for 1..256 channels)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>72..103</tt></td>
+<td align="left">Channel Mask</td>
+<td align="left">32 bits for standard <tt>WAVEFORMATEXTENSIBLE</tt> channel mask (<xref target="RFC9639"></xref> Section 8.6.2)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>104..106</tt></td>
+<td align="left">Special Mask Hints</td>
+<td align="left">3 bits reserved for channel bitmap use case hints; <bcp14>MUST</bcp14> be <tt>0b000</tt></td>
+</tr>
+
+<tr>
+<td align="left"><tt>107..108</tt></td>
+<td align="left">Ignore Mask Flag</td>
+<td align="left">2 bits indicating whether to ignore channel mask; <bcp14>MUST</bcp14> be <tt>0b00</tt></td>
+</tr>
+
+<tr>
+<td align="left"><tt>109..112</tt></td>
+<td align="left">Sample Format</td>
+<td align="left">4 bits: <tt>0b0000</tt> = integer PCM, <tt>0b0001</tt> = float PCM (<xref target="IEEE754"></xref> single precision)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>113..119</tt></td>
+<td align="left">Bits Per Sample Minus 1</td>
+<td align="left">7 bits for <tt>(bit depth) - 1</tt> (values 0..127 for 1..128 bits per sample)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>120..127</tt></td>
+<td align="left">Reserved</td>
+<td align="left">8 bits reserved for future development; <bcp14>MUST</bcp14> be <tt>0b00000000</tt></td>
+</tr>
+</tbody>
+</table></section>
+
+<section anchor="field-definitions"><name>Field Definitions</name>
+
+<ol spacing="compact">
+<li><t><strong>Sample Rate</strong> (64 bits): Sample rate in Hz represented in the <xref target="IEEE754"></xref> standard binary64 format (<tt>double</tt>).</t>
+
+<ul spacing="compact">
+<li>Special numbers (subnormal numbers, positive zero, negative zero, infinities, and NaNs) and negative values are strictly FORBIDDEN.</li>
+<li>The sample rate <bcp14>MAY</bcp14> be <tt>0.0</tt> (all 64 bits zero) to indicate that the information is only stored in <tt>STREAMINFO</tt>.</li>
+</ul></li>
+<li><strong>Channel Count Minus 1</strong> (8 bits): Encodes <tt>(number of channels) - 1</tt>. Values range from <tt>0</tt> (1 channel) to <tt>255</tt> (256 channels).</li>
+<li><strong>Channel Mask</strong> (32 bits): Standard 32-bit channel position mask conforming to the <tt>WAVEFORMATEXTENSIBLE</tt> specification as described in Section 8.6.2 of <xref target="RFC9639"></xref>.</li>
+<li><strong>Special Mask Hints</strong> (3 bits): Reserved for hinting special use cases of the channel bitmap (e.g., standard stereo vs. headphone stereo). All values are currently reserved; encoders <bcp14>MUST</bcp14> set these bits to <tt>0b000</tt> and decoders <bcp14>MUST</bcp14> ignore them.</li>
+<li><strong>Ignore Mask Flag</strong> (2 bits): Indicates whether the decoder should ignore the <tt>WAVEFORMATEXTENSIBLE</tt> bits and use another custom channel mask. All values are currently reserved; encoders <bcp14>MUST</bcp14> set these bits to <tt>0b00</tt> and decoders <bcp14>MUST</bcp14> ignore them.</li>
+<li><t><strong>Sample Format</strong> (4 bits): An enumeration defining sample arithmetic:</t>
+
+<ul spacing="compact">
+<li><tt>0b0000</tt> (0): Normal integer PCM.</li>
+<li><tt>0b0001</tt> (1): Float PCM (<xref target="IEEE754"></xref> single-precision 32-bit floating-point).</li>
+<li>Other values are reserved for future development.</li>
+</ul></li>
+<li><strong>Bits Per Sample Minus 1</strong> (7 bits): Encodes <tt>(bit depth) - 1</tt>. If the sample format is float PCM, the bit depth <bcp14>MUST</bcp14> be 32 (encoded as value <tt>31</tt>).</li>
+<li><strong>Reserved</strong> (8 bits): Reserved for future development. Encoders <bcp14>MUST</bcp14> set these bits to zero. Decoders <bcp14>MUST</bcp14> reject streams containing non-zero bits in this field.</li>
+</ol>
+</section>
+
+<section anchor="parameter-resolution"><name>Parameter Resolution and Compatibility Rules</name>
+<t>When <tt>STREAMINFO_EXTENSION</tt> is present:</t>
+
+<ol spacing="compact">
+<li>New decoders <bcp14>MUST</bcp14> replace the corresponding legacy info from the <tt>STREAMINFO</tt> block with every valid piece of information from <tt>STREAMINFO_EXTENSION</tt>, and ignore the invalid ones.</li>
+<li>If the <tt>sample_rate</tt> field in <tt>STREAMINFO_EXTENSION</tt> is <tt>0.0</tt>, or contains a forbidden IEEE 754 special representation, the decoder <bcp14>MUST</bcp14> fall back to the <tt>sample_rate</tt> stored in <tt>STREAMINFO</tt>.</li>
+<li>Only the extension header stream parameters are considered during audio decoding when the extension is present.</li>
+</ol>
+</section>
+</section>
+
+<section anchor="frame-header-extensions"><name>Frame Header Extensions</name>
+
+<section anchor="signaling-legacy-frame-header"><name>Signaling in the Legacy Frame Header</name>
+<t>The encoder <bcp14>MUST</bcp14> use the extended frame header if and only if <tt>STREAMINFO_EXTENSION</tt> is present.</t>
+<t>To ensure legacy decoders reject the frame, the legacy frame header fields <bcp14>MUST</bcp14> be set to the following indicator values:</t>
+<table anchor="tbl-legacy-header-signaling"><name>Legacy Frame Header Signaling Values </name>
+<thead>
+<tr>
+<th align="left">Field Name</th>
+<th align="left">Bit Range in Header</th>
+<th align="left">Required Value</th>
+<th align="left">Legacy Interpretation</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left">Sample Rate</td>
+<td align="left"><tt>raw_header[2] &amp; 0x0F</tt></td>
+<td align="left"><tt>0b1111</tt> (15)</td>
+<td align="left">Forbidden</td>
+</tr>
+
+<tr>
+<td align="left">Channel Assignment</td>
+<td align="left"><tt>raw_header[3] &gt;&gt; 4</tt></td>
+<td align="left"><tt>0b1111</tt> (15)</td>
+<td align="left">Reserved</td>
+</tr>
+
+<tr>
+<td align="left">Sample Size (Bit Depth)</td>
+<td align="left"><tt>(raw_header[3] &amp; 0x0E) &gt;&gt; 1</tt></td>
+<td align="left"><tt>0b011</tt> (3)</td>
+<td align="left">Reserved</td>
+</tr>
+</tbody>
+</table><t>Uncommon sample rates (sample rate hint codes 12, 13, and 14 requiring trailing octets) <bcp14>MUST NOT</bcp14> be used together with the frame header extension. Uncommon sample rates are deprecated; the frame extension <bcp14>MUST</bcp14> be used instead.</t>
+</section>
+
+<section anchor="format-selection"><name>Format Selection (Compact vs. Full)</name>
+<t>Bit 0 of byte 3 of the legacy frame header (<tt>raw_header[3] &amp; 0x01</tt>), which was defined as a reserved zero-bit in <xref target="RFC9639"></xref>, indicates the extension format:</t>
+
+<ul spacing="compact">
+<li><tt>0</tt>: <strong>Compact Mode</strong>. The extension payload is 8 bits (1 octet). Audio parameters (sample rate, channel count, channel mask, bit depth, and sample format) are inherited from <tt>STREAMINFO_EXTENSION</tt>.</li>
+<li><tt>1</tt>: <strong>Full Mode</strong>. The extension payload is 128 bits (16 octets), explicitly defining all stream parameters inline.</li>
+</ul>
+</section>
+
+<section anchor="framing-crc8-coverage"><name>Framing and CRC-8 Coverage</name>
+<t>The extension bits <bcp14>MUST</bcp14> immediately follow the main frame header bits (the frame/sample number and any blocksize hint) and directly precede the frame header CRC-8.</t>
+<t>The frame header CRC-8 covers the extension bits as well as the preceding header bytes.</t>
+</section>
+
+<section anchor="compact-mode-syntax"><name>Compact Mode Syntax</name>
+<t>In Compact Mode, the extension payload is 8 bits (1 octet):</t>
+<table anchor="tbl-compact-mode-syntax"><name>Compact Mode Extension Payload </name>
+<thead>
+<tr>
+<th align="left">Bits</th>
+<th align="left">Field Name</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0..2</tt></td>
+<td align="left">Decorrelation Mode ID</td>
+<td align="left">3 bits specifying inter-channel decorrelation (see <xref target="decorrelation-stereo"></xref>)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>3</tt></td>
+<td align="left">Float Fallback Flag</td>
+<td align="left"><tt>0</tt> = Dynamic Positional Alignment (DPA) mode, <tt>1</tt> = Fallback mode</td>
+</tr>
+
+<tr>
+<td align="left"><tt>4..7</tt></td>
+<td align="left">Reserved</td>
+<td align="left">4 bits reserved; <bcp14>MUST</bcp14> be <tt>0b0000</tt></td>
+</tr>
+</tbody>
+</table></section>
+
+<section anchor="full-mode-syntax"><name>Full Mode Syntax</name>
+<t>In Full Mode, the extension payload is 128 bits (16 octets):</t>
+<table anchor="tbl-full-mode-syntax"><name>Full Mode Extension Payload </name>
+<thead>
+<tr>
+<th align="left">Bit Range</th>
+<th align="left">Field Name</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0..63</tt></td>
+<td align="left">Sample Rate</td>
+<td align="left">64 bits IEEE 754 binary64 sample rate in Hz (forbidden values trigger fallback)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>64..71</tt></td>
+<td align="left">Channel Count Minus 1</td>
+<td align="left">8 bits for <tt>(number of channels) - 1</tt> (0..255)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>72..103</tt></td>
+<td align="left">Channel Mask</td>
+<td align="left">32 bits standard <tt>WAVEFORMATEXTENSIBLE</tt> channel mask (<xref target="RFC9639"></xref> Section 8.6.2)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>104..106</tt></td>
+<td align="left">Special Mask Hints</td>
+<td align="left">3 bits reserved; <bcp14>MUST</bcp14> be <tt>0b000</tt></td>
+</tr>
+
+<tr>
+<td align="left"><tt>107..108</tt></td>
+<td align="left">Ignore Mask Flag</td>
+<td align="left">2 bits reserved; <bcp14>MUST</bcp14> be <tt>0b00</tt></td>
+</tr>
+
+<tr>
+<td align="left"><tt>109..111</tt></td>
+<td align="left">Decorrelation Mode ID</td>
+<td align="left">3 bits specifying inter-channel decorrelation (see <xref target="decorrelation-stereo"></xref>)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>112..118</tt></td>
+<td align="left">Bits Per Sample Minus 1</td>
+<td align="left">7 bits for <tt>(bit depth) - 1</tt> (<bcp14>MUST</bcp14> be 31 for float PCM)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>119</tt></td>
+<td align="left">Float Fallback Flag</td>
+<td align="left"><tt>0</tt> = Dynamic Positional Alignment (DPA) mode, <tt>1</tt> = Fallback mode</td>
+</tr>
+
+<tr>
+<td align="left"><tt>120..123</tt></td>
+<td align="left">Reserved</td>
+<td align="left">4 bits reserved; <bcp14>MUST</bcp14> be <tt>0b0000</tt></td>
+</tr>
+
+<tr>
+<td align="left"><tt>124..127</tt></td>
+<td align="left">Sample Format</td>
+<td align="left">4 bits: <tt>0b0000</tt> = integer PCM, <tt>0b0001</tt> = float PCM</td>
+</tr>
+</tbody>
+</table></section>
+
+<section anchor="decorrelation-stereo"><name>Inter-channel Decorrelation Descriptors</name>
+<t>The interpretation of the 3-bit inter-channel decorrelation mode descriptor ID depends on the active channel configuration and channel mask.</t>
+<t>For standard 2-channel stereo (<tt>SPEAKER_FRONT_LEFT | SPEAKER_FRONT_RIGHT</tt>, or channel mask <tt>0x00000003</tt>):</t>
+<table anchor="tbl-decorrelation-stereo"><name>Stereo Inter-channel Decorrelation Modes </name>
+<thead>
+<tr>
+<th align="left">Value</th>
+<th align="left">Mode Name</th>
+<th align="left">Channel Assignment</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0b000</tt></td>
+<td align="left">Independent</td>
+<td align="left">Channel 0 = Left, Channel 1 = Right</td>
+</tr>
+
+<tr>
+<td align="left"><tt>0b001</tt></td>
+<td align="left">Left-Side Stereo</td>
+<td align="left">Channel 0 = Left, Channel 1 = Side</td>
+</tr>
+
+<tr>
+<td align="left"><tt>0b010</tt></td>
+<td align="left">Side-Right Stereo</td>
+<td align="left">Channel 0 = Side, Channel 1 = Right</td>
+</tr>
+
+<tr>
+<td align="left"><tt>0b011</tt></td>
+<td align="left">Mid-Side Stereo</td>
+<td align="left">Channel 0 = Mid, Channel 1 = Side</td>
+</tr>
+
+<tr>
+<td align="left"><tt>0b100..0b111</tt></td>
+<td align="left">Reserved</td>
+<td align="left">Reserved for future use</td>
+</tr>
+</tbody>
+</table><t>For all other channel configurations, all 3-bit values other than <tt>0b000</tt> (Independent channels) are currently reserved for future multi-channel decorrelation schemes.</t>
+</section>
+</section>
+
+<section anchor="partitioned-rice3"><name>Extended Entropy Coding: PARTITIONED_RICE3</name>
+
+<section anchor="method-type-allocation"><name>Method Type Allocation</name>
+<t>Section 9.2.7 of <xref target="RFC9639"></xref> defines the 2-bit residual coding method field. The value <tt>0b10</tt> was previously reserved. This specification allocates <tt>0b10</tt> as <tt>PARTITIONED_RICE3</tt>:</t>
+<table anchor="tbl-residual-coding-methods"><name>Residual Coding Methods </name>
+<thead>
+<tr>
+<th align="left">Value</th>
+<th align="left">Method Name</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0b00</tt></td>
+<td align="left"><tt>PARTITIONED_RICE</tt></td>
+<td align="left">4-bit Rice parameter, 5-bit escape length</td>
+</tr>
+
+<tr>
+<td align="left"><tt>0b01</tt></td>
+<td align="left"><tt>PARTITIONED_RICE2</tt></td>
+<td align="left">5-bit Rice parameter, 5-bit escape length</td>
+</tr>
+
+<tr>
+<td align="left"><tt>0b10</tt></td>
+<td align="left"><tt>PARTITIONED_RICE3</tt></td>
+<td align="left">7-bit Rice parameter, 7-bit escape length</td>
+</tr>
+
+<tr>
+<td align="left"><tt>0b11</tt></td>
+<td align="left">Reserved</td>
+<td align="left">Reserved for future use</td>
+</tr>
+</tbody>
+</table></section>
+
+<section anchor="coding-syntax-parameters"><name>Coding Syntax and Parameters</name>
+<t><tt>PARTITIONED_RICE3</tt> expands the Rice parameter and unencoded escape bit fields:</t>
+<table anchor="tbl-rice3-parameters"><name>PARTITIONED_RICE3 Parameters </name>
+<thead>
+<tr>
+<th align="left">Parameter</th>
+<th align="left">Length</th>
+<th align="left">Values / Semantics</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left">Method Type</td>
+<td align="left">2 bits</td>
+<td align="left"><tt>0b10</tt>: <tt>PARTITIONED_RICE3</tt></td>
+</tr>
+
+<tr>
+<td align="left">Partition Order</td>
+<td align="left">4 bits</td>
+<td align="left">0 &lt;= order &lt;= 15 (2^order partitions)</td>
+</tr>
+
+<tr>
+<td align="left">Rice Parameter</td>
+<td align="left">7 bits</td>
+<td align="left">0 &lt;= k &lt;= 126 (Rice parameter)</td>
+</tr>
+
+<tr>
+<td align="left">Escape Parameter</td>
+<td align="left">7 bits</td>
+<td align="left"><tt>0b1111111</tt> (127): Signals unencoded raw residual partition</td>
+</tr>
+
+<tr>
+<td align="left">Raw Bits Length</td>
+<td align="left">7 bits</td>
+<td align="left">1 &lt;= raw_bits &lt;= 127: Unencoded signed two's complement width</td>
+</tr>
+</tbody>
+</table></section>
+
+<section anchor="escape-mechanism-raw-coding"><name>Escape Mechanism and Raw Sample Coding</name>
+<t>If the 7-bit Rice parameter read for a partition is strictly less than <tt>127</tt>, the partition residual samples are decoded using signed Rice coding with parameter k.</t>
+<t>If the Rice parameter equals <tt>127</tt>:</t>
+
+<ol spacing="compact">
+<li>The decoder reads a 7-bit unsigned integer <tt>raw_bits</tt>.</li>
+<li>The decoder reads each residual sample in the partition as an unencoded signed two's complement integer of width <tt>raw_bits</tt>.</li>
+</ol>
+</section>
+</section>
+
+<section anchor="floating-point-coding"><name>Floating-Point Sample Coding</name>
+
+<section anchor="dual-subframe-architecture"><name>Dual-Subframe Per Channel Architecture</name>
+<t>When <tt>sample_type</tt> is float PCM (<tt>0b0001</tt>), each logical audio channel ch is represented using two subframes:</t>
+<table anchor="tbl-dual-subframe-arch"><name>Dual-Subframe Channel Designation </name>
+<thead>
+<tr>
+<th align="left">Subframe Index</th>
+<th align="left">Subframe Designation</th>
+<th align="left">Purpose</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>2 * ch</tt></td>
+<td align="left">Upper Subframe</td>
+<td align="left">Primary integer signal (FIXED, LPC, VERBATIM, or CONSTANT)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>2 * ch + 1</tt></td>
+<td align="left">Lower Subframe</td>
+<td align="left">Packed lower mantissa bits (PACKED) or significand</td>
+</tr>
+</tbody>
+</table><t>A frame containing C channels contains <tt>2 * C</tt> subframes.</t>
+</section>
+
+<section anchor="dpa-mode"><name>Dynamic Positional Alignment (DPA) Mode</name>
+<t>DPA mode is active when the Float Fallback Flag is <tt>0</tt>.</t>
+
+<section anchor="dpa-math-formulation"><name>Mathematical Formulation</name>
+<t>In <xref target="IEEE754"></xref> single-precision format, normalized non-zero numbers are given by:</t>
+
+<sourcecode type="ascii-art"><![CDATA[x = (-1)^s * (1 + mant * 2^(-23)) * 2^(exp - 127)
+]]>
+</sourcecode>
+<t>The active bit position bounds across a frame for each channel are:</t>
+
+<sourcecode type="ascii-art"><![CDATA[highest_pos = max_i(exp_i)
+lowest_pos = min_i(exp_i - 23 + ctz((1 << 23) | mant_i))
+span = highest_pos - lowest_pos + 2
+]]>
+</sourcecode>
+<t>Given candidate upper bit depth B_upper (e.g., 24 bits) and lower bit depth B_lower = min(23, max(0, span - B_upper)):</t>
+
+<sourcecode type="ascii-art"><![CDATA[eff_width = B_upper + B_lower
+base_pos = highest_pos - (eff_width - 2)
+]]>
+</sourcecode>
+</section>
+
+<section anchor="dpa-sample-reconstruction"><name>Sample Reconstruction</name>
+<t>To reconstruct IEEE 754 32-bit float samples:</t>
+
+<sourcecode type="python"><![CDATA[mask = (1 << lower_bits) - 1 if lower_bits > 0 else 0
+base_exp = highest_exp - ((upper_bits + lower_bits) - 2)
+
+for i in range(blocksize):
+    up = upper_signal[i]
+    low_val = lower_signal[i]
+
+    if up == 0:
+        dest[i] = uint32_to_float(low_val)
+    elif lower_bits == 0:
+        sign = 1 if up < 0 else 0
+        uval = -up if up < 0 else up
+        lead = ilog2(uval)
+        shift = lead - 23
+        orig_exp = base_exp + lead
+        explicit_mant = (uval >> shift if shift >= 0
+                         else uval << (-shift))
+        dest[i] = compose_float(sign, orig_exp,
+                                explicit_mant & 0x7FFFFF)
+    else:
+        full_x = (up << lower_bits) | (low_val & mask)
+        sign = 1 if full_x < 0 else 0
+        uval = -full_x if full_x < 0 else full_x
+        lead = ilog2(uval)
+        shift = lead - 23
+        orig_exp = base_exp + lead
+        explicit_mant = (uval >> shift if shift >= 0
+                         else uval << (-shift))
+        dest[i] = compose_float(sign, orig_exp,
+                                explicit_mant & 0x7FFFFF)
+]]>
+</sourcecode>
+</section>
+</section>
+
+<section anchor="fallback-mode"><name>Fallback Mode</name>
+<t>Fallback mode is active when the Float Fallback Flag is <tt>1</tt>. It accommodates frames where the compressed bit count in DPA mode yields a compression ratio worse than or equal to 75% of uncompressed audio bits.</t>
+
+<ol spacing="compact">
+<li><strong>Exponent Subframe</strong> (Subframe <tt>2 * ch</tt>, 8 bits per sample):</li>
+</ol>
+
+<sourcecode type="ascii-art"><![CDATA[   signal[s] = exp_s - 128    (range [-128, 127])
+]]>
+</sourcecode>
+
+<ol spacing="compact" start="2">
+<li><t><strong>Significand Subframe</strong> (Subframe <tt>2 * ch + 1</tt>, 24 bits per sample):</t>
+
+<ul spacing="compact">
+<li>Positive samples: <tt>+mantissa</tt>.</li>
+<li>Negative samples: <tt>-mantissa</tt>.</li>
+<li>Negative zero (<tt>-0.0f</tt>): encoded as <tt>-2^23 = -8388608</tt>.</li>
+</ul></li>
+</ol>
+<t>Reconstruction in Fallback mode:</t>
+
+<sourcecode type="python"><![CDATA[orig_exp = (exp_signal[i] + 128) & 0xFF
+sm = sign_mant_signal[i]
+
+if sm == -8388608:
+    sign = 1
+    mant = 0
+elif sm < 0:
+    sign = 1
+    mant = (-sm) & 0x7FFFFF
+else:
+    sign = 0
+    mant = sm & 0x7FFFFF
+
+dest[i] = (sign << 31) | (orig_exp << 23) | mant
+]]>
+</sourcecode>
+</section>
+
+<section anchor="decorrelation-float-frames"><name>Inter-channel Decorrelation in Floating-Point Frames</name>
+<t>When inter-channel decorrelation (Left-Side, Right-Side, or Mid-Side) is active in a stereo floating-point frame:</t>
+
+<ul spacing="compact">
+<li>In <strong>DPA Mode</strong>, decorrelation is applied exclusively to the Upper Subframes (Subframes 0 and 2). The side subframe receives bps + 1 bits resolution. The Lower Subframes (Subframes 1 and 3) remain independent.</li>
+<li>In <strong>Fallback Mode</strong>, decorrelation is applied exclusively to the Exponent Subframes (Subframes 0 and 2).</li>
+</ul>
+</section>
+</section>
+
+<section anchor="packed-subframe"><name>The PACKED Subframe</name>
+
+<section anchor="subframe-header-packed"><name>Subframe Header Code Allocation</name>
+<t>Section 9.2.1 of <xref target="RFC9639"></xref> defines the 6-bit subframe type indicator. The code <tt>0b000010</tt> was previously reserved. This specification allocates <tt>0b000010</tt> to <tt>SUBFRAME_PACKED</tt>:</t>
+<table anchor="tbl-subframe-packed-header"><name>SUBFRAME_PACKED Header Format </name>
+<thead>
+<tr>
+<th align="left">Bits</th>
+<th align="left">Field Name</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0</tt></td>
+<td align="left">Zero Padding</td>
+<td align="left"><bcp14>MUST</bcp14> be <tt>0</tt></td>
+</tr>
+
+<tr>
+<td align="left"><tt>1..6</tt></td>
+<td align="left">Subframe Type</td>
+<td align="left"><tt>0b000010</tt>: <tt>SUBFRAME_PACKED</tt></td>
+</tr>
+
+<tr>
+<td align="left"><tt>7</tt></td>
+<td align="left">Wasted Bits Flag</td>
+<td align="left"><bcp14>MUST</bcp14> be <tt>0</tt> (wasted bits are not used for PACKED subframes)</td>
+</tr>
+</tbody>
+</table></section>
+
+<section anchor="packed-subframe-structure"><name>PACKED Subframe Structure</name>
+<t>The payload of a <tt>PACKED</tt> subframe directly follows the subframe header octet:</t>
+<table anchor="tbl-packed-payload-structure"><name>PACKED Subframe Payload Structure </name>
+<thead>
+<tr>
+<th align="left">Bit Range</th>
+<th align="left">Field Name</th>
+<th align="left">Description</th>
+</tr>
+</thead>
+
+<tbody>
+<tr>
+<td align="left"><tt>0..7</tt></td>
+<td align="left">Exponent Zero Offset</td>
+<td align="left">8-bit channel highest exponent / DC offset value</td>
+</tr>
+
+<tr>
+<td align="left"><tt>8..12</tt></td>
+<td align="left">Lower Bits Parameter</td>
+<td align="left">5 bits encoding lower_bits (<tt>0 &lt;= k &lt;= 31</tt>)</td>
+</tr>
+
+<tr>
+<td align="left"><tt>13..15</tt></td>
+<td align="left">Reserved</td>
+<td align="left">3 bits reserved; <bcp14>MUST</bcp14> be <tt>0b000</tt></td>
+</tr>
+
+<tr>
+<td align="left">Variable</td>
+<td align="left">Sample Payload</td>
+<td align="left">Sequence of blocksize variable-width bit sequences</td>
+</tr>
+</tbody>
+</table></section>
+
+<section anchor="packed-decoding-algorithm"><name>Variable-Width Bit Truncation and Decoding Algorithm</name>
+<t>The <tt>PACKED</tt> subframe carries lower-order mantissa bits associated with the integer signal decoded from the paired upper subframe (<tt>upper_subframe[i]</tt>).</t>
+<t>For each sample i from 0 to blocksize - 1:</t>
+
+<sourcecode type="python"><![CDATA[up = upper_subframe[i]
+
+if up == 0:
+    # Outlier sample: 32 raw bits representing the IEEE 754 float
+    raw_val = bitreader.read_raw_uint32(32)
+    lower_signal[i] = raw_val
+elif lower_bits > 0:
+    if up == -1:
+        d = 0
+    elif up > 0:
+        lead_u = ilog2(up)
+        lead_full = lead_u + lower_bits
+        d = (lead_full - 23) if (lead_full > 23) else 0
+    else:
+        lead_u = ilog2(~up)
+        lead_full = lead_u + lower_bits
+        d = (lead_full - 23) if (lead_full > 23) else 0
+
+    width = (lower_bits - d) if (lower_bits > d) else 0
+    if width > 0:
+        read_val = bitreader.read_raw_uint64(width)
+        restored = read_val << d
+    else:
+        restored = 0
+    lower_signal[i] = restored
+else:
+    lower_signal[i] = 0
+]]>
+</sourcecode>
+</section>
+</section>
+
+<section anchor="ecosystem-container"><name>Ecosystem and Container Considerations</name>
+
+<section anchor="ogg-flac-encapsulation"><name>Ogg FLAC Encapsulation</name>
+<t>When encapsulating FLAC streams containing <tt>STREAMINFO_EXTENSION</tt> in an Ogg container <xref target="RFC3533"></xref> as specified in Section 10.1 of <xref target="RFC9639"></xref>:</t>
+
+<ul spacing="compact">
+<li>The <tt>STREAMINFO_EXTENSION</tt> block constitutes an additional metadata header packet.</li>
+<li>The 2-byte header packet count field in the first Ogg FLAC packet <bcp14>MUST</bcp14> account for <tt>STREAMINFO_EXTENSION</tt> in its total metadata packet count.</li>
+</ul>
+</section>
+
+<section anchor="cuesheets-cdda"><name>Cuesheets and CD-DA Constraints</name>
+<t>In accordance with Compact Disc Digital Audio (CD-DA) constraints:</t>
+
+<ul spacing="compact">
+<li>The CD-DA subset flag in cuesheet metadata blocks <bcp14>MUST NOT</bcp14> be set if the audio stream uses floating-point sample format or has a sample rate other than 44,100 Hz.</li>
+<li>For non-CD-DA cuesheet tracks on streams with fractional sample rates, sample offsets <bcp14>MUST</bcp14> be rounded to the nearest integer index using <tt>rint()</tt> rounding.</li>
+</ul>
+</section>
+
+<section anchor="seektable-calculations"><name>Seek Table Calculations with Float Sample Rates</name>
+<t>Seek table target sample offsets and time-to-sample calculations <bcp14>MUST</bcp14> be computed using 64-bit IEEE 754 double-precision floating-point arithmetic when <tt>STREAMINFO_EXTENSION</tt> sample rate is present.</t>
+</section>
+
+<section anchor="replaygain-float"><name>ReplayGain for Floating-Point Streams</name>
+<t>ReplayGain analysis on 32-bit float streams operates directly on normalized floating-point samples (with reference level matching full-scale 1.0). During playback synthesis, gain adjustments are applied via direct linear float multiplication without integer quantization or hard clipping.</t>
+</section>
+</section>
+
+<section anchor="security-considerations"><name>Security Considerations</name>
+<t>Implementations processing extended FLAC bitstreams must account for security considerations associated with untrusted audio decoding:</t>
+
+<ol spacing="compact">
+<li><strong>Memory Allocation Validation</strong>: Channel counts up to 256 and bit depths up to 128 imply larger decoded frame buffers. Implementations <bcp14>MUST</bcp14> ensure that channel counts, block sizes, and bit depths declared in <tt>STREAMINFO_EXTENSION</tt> or Full Frame Headers do not cause integer overflows during buffer allocation calculations.</li>
+<li><strong>IEEE 754 Special Value Validation</strong>: Decoders <bcp14>MUST</bcp14> validate the 64-bit floating-point sample rate field in <tt>STREAMINFO_EXTENSION</tt> and frame headers. De-serialized double-precision values <bcp14>MUST</bcp14> be checked for subnormals, infinities, and NaN payloads to prevent undefined floating-point behavior, division-by-zero errors in timeline calculations, or denial-of-service conditions during seek operations.</li>
+<li><strong>Entropy Decoder Buffer Bounds</strong>: In <tt>PARTITIONED_RICE3</tt>, escape parameters signal unencoded raw bit lengths up to 127 bits. Bitstream readers <bcp14>MUST</bcp14> strictly verify buffer boundaries prior to variable-width bit consumption to prevent out-of-bounds memory reads.</li>
+<li><strong>Header CRC-8 Verification</strong>: Implementations <bcp14>MUST</bcp14> verify the frame header CRC-8 over the full extended header payload before attempting to interpret extended frame properties or allocate subframe resources.</li>
+</ol>
+</section>
+
+<section anchor="iana-considerations"><name>IANA Considerations</name>
+<t>This document has no IANA actions.</t>
+</section>
+
+</middle>
+
+<back>
+<references><name>Normative References</name>
+<reference anchor="IEEE754" target="https://doi.org/10.1109/IEEESTD.2008.4610935">
+  <front>
+    <title>IEEE Standard for Floating-Point Arithmetic</title>
+    <author>
+      <organization>IEEE</organization>
+    </author>
+    <date year="2008"></date>
+  </front>
+  <seriesInfo name="IEEE Std" value="754-2008"></seriesInfo>
+  <seriesInfo name="DOI" value="10.1109/IEEESTD.2008.4610935"></seriesInfo>
+</reference>
+<xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.2119.xml"/>
+<xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.8174.xml"/>
+<xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.9639.xml"/>
+</references>
+<references><name>Informative References</name>
+<xi:include href="https://xml2rfc.ietf.org/public/rfc/bibxml/reference.RFC.3533.xml"/>
+</references>
+
+</back>
+
+</rfc>
